@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
@@ -48,7 +47,6 @@ export default function RootLayout({
         <ToastProvider>
           {children}
         </ToastProvider>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )
