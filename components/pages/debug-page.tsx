@@ -9,7 +9,12 @@ import {
   XCircle,
   Copy,
   Trash2,
-  FileText
+  FileText,
+  TestTube2,
+  Zap,
+  RefreshCw,
+  Cloud,
+  Search
 } from 'lucide-react'
 import { 
   MOCK_LOGS, 
@@ -17,12 +22,25 @@ import {
 } from '@/lib/mock-data'
 import { useToast } from '@/components/ui/toast'
 
+// Tipos de log expandidos
 const LOG_TYPE: Record<string, { icon: React.FC<{ className?: string; style?: React.CSSProperties }>; color: string; label: string }> = {
   info:    { icon: Info,          color: '#3b82f6', label: 'INFO' },
   success: { icon: CheckCircle2,  color: '#22c55e', label: 'OK' },
   warning: { icon: AlertTriangle, color: '#f59e0b', label: 'AVISO' },
   erro:    { icon: XCircle,       color: '#ef4444', label: 'ERRO' },
 }
+
+// Categorias de filtro
+const CATEGORIAS = [
+  { id: 'todos', label: 'Todos', icon: FileText, color: '#94a3b8' },
+  { id: 'erro', label: 'Erros', icon: XCircle, color: '#ef4444' },
+  { id: 'warning', label: 'Avisos', icon: AlertTriangle, color: '#f59e0b' },
+  { id: 'success', label: 'Sucessos', icon: CheckCircle2, color: '#22c55e' },
+  { id: 'xcloud', label: 'XCloud', icon: Cloud, color: '#14b8a6' },
+  { id: 'testes', label: 'Testes', icon: TestTube2, color: '#3b82f6' },
+  { id: 'ativacoes', label: 'Ativacoes', icon: Zap, color: '#f59e0b' },
+  { id: 'renovacoes', label: 'Renovacoes', icon: RefreshCw, color: '#8b5cf6' },
+]
 
 // ——— Linha de log estilo operacional ———
 function LogLine({ log }: { log: LogEntry }) {
@@ -56,6 +74,7 @@ export function DebugPage() {
   const [logs, setLogs] = useState(MOCK_LOGS)
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock')
   const [filter, setFilter] = useState<string>('todos')
+  const [search, setSearch] = useState('')
   const { addToast } = useToast()
 
   useEffect(() => {
@@ -78,9 +97,26 @@ export function DebugPage() {
     return () => { alive = false }
   }, [])
 
+  // Filtrar logs por tipo e categoria
   const logsFiltrados = logs.filter(l => {
+    // Filtro de busca
+    if (search) {
+      const s = search.toLowerCase()
+      if (!l.mensagem.toLowerCase().includes(s) && !(l.detalhes?.toLowerCase().includes(s))) {
+        return false
+      }
+    }
+    
+    // Filtro de categoria
     if (filter === 'todos') return true
-    return l.tipo === filter
+    if (filter === 'erro') return l.tipo === 'erro'
+    if (filter === 'warning') return l.tipo === 'warning'
+    if (filter === 'success') return l.tipo === 'success'
+    if (filter === 'xcloud') return l.mensagem.toLowerCase().includes('xcloud') || l.mensagem.toLowerCase().includes('device')
+    if (filter === 'testes') return l.mensagem.toLowerCase().includes('teste') || l.mensagem.toLowerCase().includes('test')
+    if (filter === 'ativacoes') return l.mensagem.toLowerCase().includes('ativ') || l.mensagem.toLowerCase().includes('client')
+    if (filter === 'renovacoes') return l.mensagem.toLowerCase().includes('renov')
+    return true
   })
 
   const metricas = {
@@ -88,6 +124,10 @@ export function DebugPage() {
     erros: logs.filter(l => l.tipo === 'erro').length,
     warnings: logs.filter(l => l.tipo === 'warning').length,
     success: logs.filter(l => l.tipo === 'success').length,
+    xcloud: logs.filter(l => l.mensagem.toLowerCase().includes('xcloud') || l.mensagem.toLowerCase().includes('device')).length,
+    testes: logs.filter(l => l.mensagem.toLowerCase().includes('teste') || l.mensagem.toLowerCase().includes('test')).length,
+    ativacoes: logs.filter(l => l.mensagem.toLowerCase().includes('ativ') || l.mensagem.toLowerCase().includes('client')).length,
+    renovacoes: logs.filter(l => l.mensagem.toLowerCase().includes('renov')).length,
   }
 
   const handleCopy = () => {

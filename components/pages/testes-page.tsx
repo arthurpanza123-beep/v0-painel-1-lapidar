@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  TrendingUp, TestTube2, Search, Clock, Eye, Zap, ExternalLink
+  TrendingUp, TestTube2, Search, Clock, Eye, Zap, ExternalLink,
+  AlertTriangle, Trash2, Copy, X
 } from 'lucide-react'
 import {
   MOCK_TESTES,
@@ -15,10 +16,18 @@ import { useToast } from '@/components/ui/toast'
 // Duração do teste: 1 hora e 15 minutos
 const JANELA_TESTE_MS = 75 * 60 * 1000
 
+// URLs dos painéis
+const PAINEIS_URL: Record<string, string> = {
+  'yellow': 'https://yellowbox.com/painel',
+  'ninety': 'https://ninety.com/admin',
+  'cinemax': 'https://cinemax.com/painel',
+}
+
 // ——— Countdown hook ———
 function useCountdown(validade: string) {
   const [remaining, setRemaining] = useState('')
   const [urgente, setUrgente] = useState(false)
+  const [expirado, setExpirado] = useState(false)
   const [pct, setPct] = useState(100)
 
   useEffect(() => {
@@ -37,9 +46,11 @@ function useCountdown(validade: string) {
       if (diff <= 0) {
         setRemaining('Expirado')
         setUrgente(true)
+        setExpirado(true)
         setPct(0)
         return
       }
+      setExpirado(false)
       const h = Math.floor(diff / 3600000)
       const m = Math.floor((diff % 3600000) / 60000)
       setUrgente(h < 1) // urgente se menos de 1 hora
@@ -53,7 +64,7 @@ function useCountdown(validade: string) {
     return () => clearInterval(id)
   }, [validade])
 
-  return { remaining, urgente, pct }
+  return { remaining, urgente, expirado, pct }
 }
 
 // ——— Status config ———
@@ -66,17 +77,20 @@ const STATUS: Record<StatusTeste, { label: string; color: string }> = {
 
 // ——— Card de teste focado em countdown ———
 function TesteCard({
-  teste, onVerDetalhes, onConverter, onAtivar, onAbrirPainel2,
+  teste, onVerDetalhes, onConverter, onAtivar, onAbrirPainel2, onExpirar, onRemoverXCloud,
 }: {
   teste: Teste
   onVerDetalhes: () => void
   onConverter: () => void
   onAtivar: () => void
   onAbrirPainel2: () => void
+  onExpirar: () => void
+  onRemoverXCloud: () => void
 }) {
-  const { remaining, urgente, pct } = useCountdown(teste.validade)
+  const { remaining, urgente, expirado, pct } = useCountdown(teste.validade)
   const cfg = STATUS[teste.status]
   const isAtivo = teste.status === 'ativo'
+  const isExpirado = teste.status === 'expirado' || expirado
   const isXCloud = teste.app.toLowerCase().includes('xcloud')
 
   return (
@@ -171,7 +185,7 @@ function TesteCard({
             >
               <Eye className="h-3 w-3" /> Ver detalhes
             </button>
-            {(isAtivo || teste.status === 'sem_resposta') && (
+            {(isAtivo || teste.status === 'sem_resposta') && !isExpirado && (
               <button
                 onClick={onConverter}
                 className="h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all"
@@ -187,6 +201,26 @@ function TesteCard({
                 style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' }}
               >
                 <Zap className="h-3 w-3" /> Ativar cliente
+              </button>
+            )}
+            {/* Expirar teste - aparece quando ativo ou sem_resposta */}
+            {(isAtivo || teste.status === 'sem_resposta') && (
+              <button
+                onClick={onExpirar}
+                className="h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all"
+                style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+              >
+                <AlertTriangle className="h-3 w-3" /> Expirar teste
+              </button>
+            )}
+            {/* Remover device XCloud - aparece quando expirado e é XCloud */}
+            {isExpirado && isXCloud && (
+              <button
+                onClick={onRemoverXCloud}
+                className="h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all"
+                style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}
+              >
+                <Trash2 className="h-3 w-3" /> Remover device XCloud
               </button>
             )}
             <button
@@ -209,6 +243,9 @@ export function TestesPage() {
   const [statusFilter, setStatusFilter] = useState<StatusTeste | 'todos'>('todos')
   const [testes, setTestes] = useState(MOCK_TESTES)
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock')
+  const [modalExpirar, setModalExpirar] = useState<Teste | null>(null)
+  const [modalRemoverXCloud, setModalRemoverXCloud] = useState<Teste | null>(null)
+  const [removendoXCloud, setRemovendoXCloud] = useState(false)
   const { addToast } = useToast()
 
   useEffect(() => {
@@ -259,6 +296,64 @@ export function TestesPage() {
     const url = `https://painel2.centralplayplus.com.br?source=painel1&test_id=${teste.id}&flow=test_created`
     window.open(url, '_blank')
     addToast('success', 'Abrindo Painel 2...')
+  }
+
+  // Handler para expirar teste
+  const handleExpirarTeste = (teste: Teste) => {
+    // 1. Copiar usuário para área de transferência
+    if (teste.usuario) {
+      navigator.clipboard.writeText(teste.usuario)
+      addToast('success', `Usuário "${teste.usuario}" copiado!`)
+    }
+
+    // 2. Abrir painel do provedor
+    const painelKey = teste.servidor?.toLowerCase().replace(/\s+/g, '') || 'yellow'
+    const painelUrl = PAINEIS_URL[painelKey] || PAINEIS_URL['yellow']
+    window.open(painelUrl, '_blank')
+
+    // 3. Atualizar status local para expirado
+    setTestes(prev => prev.map(t => 
+      t.id === teste.id ? { ...t, status: 'expirado' as StatusTeste } : t
+    ))
+
+    // 4. Enviar evento para Painel 2 (figurinha de teste expirado)
+    const params = new URLSearchParams({
+      source: 'painel1',
+      test_id: teste.id,
+      client_name: teste.cliente,
+      client_phone: teste.telefone,
+      flow: 'test_expired',
+    })
+    window.open(`https://painel2.centralplayplus.com.br?${params.toString()}`, '_blank')
+
+    setModalExpirar(null)
+    addToast('info', 'Painel aberto. Desative o teste manualmente.')
+  }
+
+  // Handler para remover device XCloud
+  const handleRemoverXCloud = async (teste: Teste) => {
+    setRemovendoXCloud(true)
+    try {
+      const res = await fetch('/api/xcloud/activate-device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          test_id: teste.id,
+          mode: 'remove_device',
+        }),
+      })
+      const data = await res.json().catch(() => null)
+      if (data?.success) {
+        addToast('success', 'Device XCloud removida com sucesso!')
+      } else {
+        addToast('error', data?.error || 'Falha ao remover device XCloud')
+      }
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Erro ao remover device')
+    } finally {
+      setRemovendoXCloud(false)
+      setModalRemoverXCloud(null)
+    }
   }
 
   return (
@@ -351,11 +446,168 @@ export function TestesPage() {
                   addToast('success', 'Abrindo ativação...')
                 }}
                 onAbrirPainel2={() => handleAbrirPainel2(teste)}
+                onExpirar={() => setModalExpirar(teste)}
+                onRemoverXCloud={() => setModalRemoverXCloud(teste)}
               />
             ))
           )}
         </AnimatePresence>
       </div>
+
+      {/* Modal Expirar Teste */}
+      <AnimatePresence>
+        {modalExpirar && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.8)' }}
+            onClick={() => setModalExpirar(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md rounded-2xl p-6"
+              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-white">Expirar teste</h2>
+                <button onClick={() => setModalExpirar(null)} className="p-1 rounded-lg hover:bg-white/10">
+                  <X className="h-5 w-5 text-slate-400" />
+                </button>
+              </div>
+              
+              <div className="rounded-xl p-4 mb-4" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                <p className="text-sm text-red-200 mb-2">
+                  <strong>Atenção:</strong> Esta ação vai:
+                </p>
+                <ul className="text-xs text-red-300 space-y-1 list-disc list-inside">
+                  <li>Copiar o usuário para a área de transferência</li>
+                  <li>Abrir o painel do provedor</li>
+                  <li>Enviar evento para o Painel 2</li>
+                </ul>
+              </div>
+
+              <div className="rounded-xl p-4 mb-6" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.15)' }}>
+                    <AlertTriangle className="h-5 w-5 text-red-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">{modalExpirar.cliente}</p>
+                    <p className="text-xs text-slate-500">{modalExpirar.app} · {modalExpirar.servidor}</p>
+                  </div>
+                </div>
+                {modalExpirar.usuario && (
+                  <div className="flex items-center gap-2 mt-3 rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                    <Copy className="h-4 w-4 text-slate-500" />
+                    <span className="text-sm font-mono text-slate-300">{modalExpirar.usuario}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setModalExpirar(null)}
+                  className="h-11 rounded-xl text-sm font-medium"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => handleExpirarTeste(modalExpirar)}
+                  className="h-11 rounded-xl text-sm font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 4px 16px rgba(239,68,68,0.3)' }}
+                >
+                  Expirar teste
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Remover Device XCloud */}
+      <AnimatePresence>
+        {modalRemoverXCloud && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.8)' }}
+            onClick={() => !removendoXCloud && setModalRemoverXCloud(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md rounded-2xl p-6"
+              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-white">Remover device XCloud</h2>
+                <button 
+                  onClick={() => !removendoXCloud && setModalRemoverXCloud(null)} 
+                  className="p-1 rounded-lg hover:bg-white/10"
+                  disabled={removendoXCloud}
+                >
+                  <X className="h-5 w-5 text-slate-400" />
+                </button>
+              </div>
+              
+              <div className="rounded-xl p-4 mb-4" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                <p className="text-sm text-red-200 mb-2">
+                  <strong>Acao sensivel:</strong> Esta acao vai:
+                </p>
+                <ul className="text-xs text-red-300 space-y-1 list-disc list-inside">
+                  <li>Localizar a device no XCloud</li>
+                  <li>Desativar a device</li>
+                  <li>Excluir a device</li>
+                </ul>
+                <p className="text-xs text-red-300 mt-2">
+                  Se o cliente renovar depois, a device pode ser adicionada novamente como nova.
+                </p>
+              </div>
+
+              <div className="rounded-xl p-4 mb-6" style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.2)' }}>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{ background: 'rgba(20,184,166,0.2)' }}>
+                    <Trash2 className="h-5 w-5 text-teal-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">{modalRemoverXCloud.cliente}</p>
+                    <p className="text-xs text-slate-500">XCloud · {modalRemoverXCloud.servidor}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setModalRemoverXCloud(null)}
+                  disabled={removendoXCloud}
+                  className="h-11 rounded-xl text-sm font-medium disabled:opacity-50"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => handleRemoverXCloud(modalRemoverXCloud)}
+                  disabled={removendoXCloud}
+                  className="h-11 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 4px 16px rgba(239,68,68,0.3)' }}
+                >
+                  {removendoXCloud ? 'Removendo...' : 'Remover device'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
