@@ -3,32 +3,24 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  TestTube2, Users, Kanban, Wallet, Zap,
-  ArrowUpRight, Activity, Clock
+  TestTube2, Users, Zap, UserPlus,
+  ArrowUpRight, Activity, Clock, AlertTriangle, Info
 } from 'lucide-react'
 import type { NavPage } from '@/app/page'
-// MOCK: importação direta dos mocks — usada como fallback quando metrics não é passado
-// MIGRAÇÃO FUTURA: remover estas importações quando getDashboardData() for chamado
-//   no Server Component pai (app/page.tsx) e os dados forem passados via props.
 import {
-  MOCK_TESTES, MOCK_CLIENTES, MOCK_PIPELINE, MOCK_CREDITOS,
+  MOCK_TESTES, MOCK_CLIENTES, MOCK_PIPELINE, MOCK_CREDITOS, MOCK_RENOVACOES,
   calcularMetricasFinanceiro, calcularMetricasPipeline,
 } from '@/lib/mock-data'
 import type { DashboardMetrics } from '@/lib/supabase/types'
 
 interface DashboardPageProps {
   onNavigate: (p: NavPage) => void
-  /**
-   * Dados vindos de getDashboardData() (lib/queries/dashboard.ts).
-   * Se não for passado, o componente usa os mocks diretamente.
-   * MIGRAÇÃO FUTURA: tornar obrigatório quando o Server Component pai
-   *   passar os dados reais.
-   */
   metrics?: DashboardMetrics
 }
 
 export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
   const [remoteMetrics, setRemoteMetrics] = useState<DashboardMetrics | undefined>(metrics)
+  const [showProjecaoTooltip, setShowProjecaoTooltip] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -44,48 +36,44 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
   }, [])
 
   const dashboardMetrics = remoteMetrics ?? metrics
-
-  // ── Fallback para mock quando metrics não for fornecido (estado atual) ──
-  // MOCK: bloco abaixo é temporário — remover quando metrics vier do Supabase
   const fin  = calcularMetricasFinanceiro()
   const pipe = calcularMetricasPipeline()
 
-  const testesAtivos   = dashboardMetrics?.active_tests        ?? MOCK_TESTES.filter(t => t.status === 'ativo').length
-  const testesHoje     = dashboardMetrics?.total_tests         ?? MOCK_TESTES.length
-  const leadsAndamento = dashboardMetrics?.leads_in_progress   ?? MOCK_PIPELINE.filter(l => l.etapa !== 'ativado' && l.etapa !== 'renovacao').length
-  const clientesAtivos = dashboardMetrics?.active_clients      ?? MOCK_CLIENTES.filter(c => c.status === 'ativo').length
-  const creditos       = dashboardMetrics?.available_credits   ?? fin.creditosDisponiveis
-  const receitaPrevista = dashboardMetrics?.revenue_forecast_30d ?? fin.receitaPrevista30d
+  // Métricas principais ajustadas
+  const hoje = new Date().toLocaleDateString('pt-BR')
+  const leadsHoje = dashboardMetrics?.leads_today ?? MOCK_PIPELINE.filter(l => l.criadoEm.startsWith(hoje.split('/').reverse().join('-').substring(0, 10)) || l.criadoEm.includes(hoje)).length || MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
+  const testesHoje = dashboardMetrics?.total_tests ?? MOCK_TESTES.length
+  const ativacoesHoje = dashboardMetrics?.activations_today ?? MOCK_PIPELINE.filter(l => l.etapa === 'ativado').length
+  const clientesAtivos = dashboardMetrics?.active_clients ?? MOCK_CLIENTES.filter(c => c.status === 'ativo').length
 
-  const serie = [
-    { label: 'Hoje', value: dashboardMetrics?.revenue_current_month  ?? fin.receitaMesAtual },
-    { label: '30d',  value: dashboardMetrics?.revenue_forecast_30d   ?? fin.receitaPrevista30d },
-    { label: '60d',  value: dashboardMetrics?.revenue_forecast_60d   ?? fin.receitaPrevista60d },
-    { label: '90d',  value: dashboardMetrics?.revenue_forecast_90d   ?? fin.receitaPrevista90d },
-  ]
-  const maxSerie = Math.max(...serie.map(s => s.value), 1)
+  // Receita prevista 30 dias - soma dos vencimentos próximos 30 dias
+  const clientesComValor = MOCK_CLIENTES.filter(c => c.status === 'ativo' && c.valor > 0)
+  const clientesSemValor = MOCK_CLIENTES.filter(c => c.status === 'ativo' && (!c.valor || c.valor <= 0)).length
+  const receitaPrevista = dashboardMetrics?.revenue_forecast_30d ?? clientesComValor.reduce((acc, c) => acc + c.valor, 0)
+  const projecaoComPerda = receitaPrevista * 0.7 // 30% de perda estimada
 
-  // MOCK: funil vem do pipe mock ou de metrics.funnel
-  const funil = dashboardMetrics?.funnel
-    ? dashboardMetrics.funnel.map(f => ({ label: f.label, value: f.count, color: f.color }))
-    : [
-        { label: 'Leads',     value: pipe.novo_lead + pipe.contato,    color: '#3b82f6' },
-        { label: 'Testando',  value: pipe.teste_gerado + pipe.testando, color: '#f59e0b' },
-        { label: 'Interesse', value: pipe.interessado,                  color: '#a78bfa' },
-        { label: 'Pagaram',   value: pipe.pagou,                        color: '#22c55e' },
-        { label: 'Ativados',  value: pipe.ativado,                      color: '#14b8a6' },
-      ]
-
-  // MOCK: créditos vêm do mock ou de metrics.panel_credits
+  // Créditos como telas/ativações, não R$
   const painelCreditos = dashboardMetrics?.panel_credits
-    ? dashboardMetrics.panel_credits.map(c => ({ id: c.id, painel: c.panel, saldo: c.balance, alertaBaixo: c.low_balance }))
-    : MOCK_CREDITOS
+    ? dashboardMetrics.panel_credits.map(c => ({ id: c.id, painel: c.panel, creditos: Math.floor(c.balance / 8), alertaBaixo: c.low_balance }))
+    : MOCK_CREDITOS.map(c => ({ id: c.id, painel: c.painel, creditos: c.ativacoesRestantes, alertaBaixo: c.alertaBaixo }))
+
+  // Funil do dia - simplificado
+  const vencemHoje = MOCK_RENOVACOES.filter(r => r.diasRestantes === 0).length
+  const problemasAbertos = dashboardMetrics?.open_problems ?? 2
+
+  const funil = [
+    { label: 'Leads',        value: leadsHoje,       color: '#3b82f6' },
+    { label: 'Testes',       value: testesHoje,      color: '#f59e0b' },
+    { label: 'Ativaram',     value: ativacoesHoje,   color: '#22c55e' },
+    { label: 'Vencem hoje',  value: vencemHoje,      color: '#f97316' },
+    { label: 'Problemas',    value: problemasAbertos, color: '#ef4444' },
+  ]
 
   const kpis = [
-    { label: 'Testes ativos',      value: testesAtivos,   icon: TestTube2, color: '#3b82f6', page: 'testes'   as NavPage },
-    { label: 'Gerados hoje',       value: testesHoje,     icon: Zap,       color: '#f59e0b', page: 'testes'   as NavPage },
-    { label: 'Leads em andamento', value: leadsAndamento, icon: Kanban,    color: '#a78bfa', page: 'pipeline' as NavPage },
-    { label: 'Clientes ativos',    value: clientesAtivos, icon: Users,     color: '#22c55e', page: 'clientes' as NavPage },
+    { label: 'Leads hoje',       value: leadsHoje,       icon: UserPlus,  color: '#3b82f6', page: 'pipeline' as NavPage },
+    { label: 'Testes hoje',      value: testesHoje,      icon: TestTube2, color: '#f59e0b', page: 'testes'   as NavPage },
+    { label: 'Ativações hoje',   value: ativacoesHoje,   icon: Zap,       color: '#22c55e', page: 'contas'   as NavPage },
+    { label: 'Clientes ativos',  value: clientesAtivos,  icon: Users,     color: '#a78bfa', page: 'clientes' as NavPage },
   ]
 
   return (
@@ -136,7 +124,7 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
           ))}
         </div>
 
-        {/* Receita + créditos */}
+        {/* Receita prevista + créditos */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
           <motion.div
             initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
@@ -150,13 +138,47 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
             <div className="relative flex items-start justify-between mb-5">
               <div>
                 <p className="text-xs text-slate-500 mb-1">Receita prevista (30 dias)</p>
-                <p className="text-4xl font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>
-                  R$ {receitaPrevista.toFixed(0)}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-4xl font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>
+                    R$ {receitaPrevista.toFixed(0)}
+                  </p>
+                  <button
+                    onClick={() => setShowProjecaoTooltip(!showProjecaoTooltip)}
+                    onMouseEnter={() => setShowProjecaoTooltip(true)}
+                    onMouseLeave={() => setShowProjecaoTooltip(false)}
+                    className="relative"
+                  >
+                    <Info className="h-4 w-4 text-slate-500 hover:text-slate-300 transition-colors" />
+                    {showProjecaoTooltip && (
+                      <div
+                        className="absolute left-6 top-0 z-50 w-64 p-3 rounded-xl text-left"
+                        style={{ background: '#1e2230', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}
+                      >
+                        <p className="text-xs text-slate-300 mb-2">Como calculamos:</p>
+                        <div className="space-y-1.5 text-[11px] text-slate-400">
+                          <p>Previsto: R$ {receitaPrevista.toFixed(0)}</p>
+                          <p>Estimativa com perda de 30%: R$ {projecaoComPerda.toFixed(0)}</p>
+                          {clientesSemValor > 0 && (
+                            <p className="flex items-center gap-1 text-amber-400">
+                              <AlertTriangle className="h-3 w-3" />
+                              {clientesSemValor} clientes sem valor cadastrado
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                </div>
                 <p className="text-xs flex items-center gap-1 mt-1.5" style={{ color: '#22c55e' }}>
                   <ArrowUpRight className="h-3.5 w-3.5" />
-                  Projeção crescente nos próximos 90 dias
+                  Projeção: R$ {projecaoComPerda.toFixed(0)} (com 30% de perda)
                 </p>
+                {clientesSemValor > 0 && (
+                  <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    {clientesSemValor} clientes sem valor cadastrado
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => onNavigate('financeiro')}
@@ -165,29 +187,6 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
               >
                 Financeiro
               </button>
-            </div>
-            <div className="relative flex items-end justify-between gap-3 h-28">
-              {serie.map((s, i) => (
-                <div key={s.label} className="flex-1 flex flex-col items-center justify-end h-full gap-2">
-                  <motion.div
-                    initial={{ height: 0 }}
-                    animate={{ height: `${(s.value / maxSerie) * 100}%` }}
-                    transition={{ delay: 0.3 + i * 0.08, duration: 0.5, ease: 'easeOut' }}
-                    className="w-full rounded-t-lg relative group"
-                    style={{
-                      background: i === 0
-                        ? 'linear-gradient(180deg, #22c55e, rgba(34,197,94,0.3))'
-                        : 'linear-gradient(180deg, rgba(34,197,94,0.5), rgba(34,197,94,0.08))',
-                      minHeight: 6,
-                    }}
-                  >
-                    <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                      R$ {s.value.toFixed(0)}
-                    </span>
-                  </motion.div>
-                  <span className="text-[10px] text-slate-500">{s.label}</span>
-                </div>
-              ))}
             </div>
           </motion.div>
 
@@ -198,12 +197,9 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
             style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
           >
             <div className="flex items-center gap-2 mb-4">
-              <Wallet className="h-4 w-4" style={{ color: '#a78bfa' }} />
+              <Zap className="h-4 w-4" style={{ color: '#a78bfa' }} />
               <span className="text-xs text-slate-500">Créditos disponíveis</span>
             </div>
-            <p className="text-3xl font-bold text-white mb-4" style={{ fontFamily: 'var(--font-display)' }}>
-              R$ {creditos.toFixed(0)}
-            </p>
             <div className="space-y-2.5">
               {painelCreditos.slice(0, 4).map(c => (
                 <div key={c.id} className="flex items-center justify-between">
@@ -211,8 +207,8 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
                     {c.alertaBaixo && <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#f59e0b' }} />}
                     {c.painel}
                   </span>
-                  <span className="text-xs font-medium" style={{ color: c.alertaBaixo ? '#f59e0b' : '#94a3b8' }}>
-                    R$ {c.saldo.toFixed(0)}
+                  <span className="text-sm font-semibold" style={{ color: c.alertaBaixo ? '#f59e0b' : '#4ade80' }}>
+                    {c.creditos} {c.creditos === 1 ? 'tela' : 'telas'}
                   </span>
                 </div>
               ))}
@@ -220,7 +216,7 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
           </motion.button>
         </div>
 
-        {/* Funil */}
+        {/* Funil - Hoje na operação */}
         <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
           className="rounded-2xl p-6"
@@ -232,7 +228,6 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
               <h2 className="text-sm font-semibold text-white">Hoje na operação</h2>
             </div>
             <div className="flex items-center gap-3">
-              {/* Indicador de fonte de dados — MOCK = laranja, Supabase = verde */}
               <span
                 className="text-[10px] px-2 py-0.5 rounded-full font-medium"
                 style={{

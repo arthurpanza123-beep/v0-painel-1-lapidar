@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  MessageCircle, Send, TrendingUp, TestTube2, Search, Radio
+  TrendingUp, TestTube2, Search, Clock, Eye, Zap, ExternalLink
 } from 'lucide-react'
 import {
   MOCK_TESTES,
@@ -12,7 +12,8 @@ import {
 } from '@/lib/mock-data'
 import { useToast } from '@/components/ui/toast'
 
-const JANELA_TESTE_MS = 4 * 60 * 60 * 1000 // janela padrão de teste: 4h
+// Duração do teste: 1 hora e 15 minutos
+const JANELA_TESTE_MS = 75 * 60 * 1000
 
 // ——— Countdown hook ———
 function useCountdown(validade: string) {
@@ -41,10 +42,11 @@ function useCountdown(validade: string) {
       }
       const h = Math.floor(diff / 3600000)
       const m = Math.floor((diff % 3600000) / 60000)
-      setUrgente(h < 4)
+      setUrgente(h < 1) // urgente se menos de 1 hora
       setPct(Math.max(0, Math.min(100, (diff / JANELA_TESTE_MS) * 100)))
       if (h >= 24) setRemaining(`${Math.floor(h / 24)}d ${h % 24}h`)
-      else setRemaining(`${h}h ${m}m`)
+      else if (h > 0) setRemaining(`${h}h ${m}m`)
+      else setRemaining(`${m}min`)
     }
     calc()
     const id = setInterval(calc, 30000)
@@ -56,24 +58,26 @@ function useCountdown(validade: string) {
 
 // ——— Status config ———
 const STATUS: Record<StatusTeste, { label: string; color: string }> = {
-  ativo:        { label: 'Ativo',    color: '#22c55e' },
-  expirado:     { label: 'Expirado', color: '#ef4444' },
-  pago:         { label: 'Pago',     color: '#3b82f6' },
+  ativo:        { label: 'Testando',   color: '#22c55e' },
+  expirado:     { label: 'Expirado',   color: '#ef4444' },
+  pago:         { label: 'Convertido', color: '#3b82f6' },
   sem_resposta: { label: 'Aguardando', color: '#f59e0b' },
 }
 
 // ——— Card de teste focado em countdown ———
 function TesteCard({
-  teste, onWhatsApp, onReenviar, onConverter,
+  teste, onVerDetalhes, onConverter, onAtivar, onAbrirPainel2,
 }: {
   teste: Teste
-  onWhatsApp: () => void
-  onReenviar: () => void
+  onVerDetalhes: () => void
   onConverter: () => void
+  onAtivar: () => void
+  onAbrirPainel2: () => void
 }) {
   const { remaining, urgente, pct } = useCountdown(teste.validade)
   const cfg = STATUS[teste.status]
   const isAtivo = teste.status === 'ativo'
+  const isXCloud = teste.app.toLowerCase().includes('xcloud')
 
   return (
     <motion.div
@@ -146,6 +150,14 @@ function TesteCard({
             >
               {cfg.label}
             </span>
+            {isXCloud && (
+              <span
+                className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0"
+                style={{ background: 'rgba(20,184,166,0.15)', color: '#14b8a6' }}
+              >
+                XCloud
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mb-3">
             {teste.app} · {teste.servidor} · {teste.telefone}
@@ -153,18 +165,11 @@ function TesteCard({
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={onReenviar}
+              onClick={onVerDetalhes}
               className="h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all"
-              style={{ background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.2)' }}
+              style={{ background: 'rgba(148,163,184,0.1)', color: '#94a3b8', border: '1px solid rgba(148,163,184,0.2)' }}
             >
-              <Send className="h-3 w-3" /> Reenviar
-            </button>
-            <button
-              onClick={onWhatsApp}
-              className="h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all"
-              style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' }}
-            >
-              <MessageCircle className="h-3 w-3" /> WhatsApp
+              <Eye className="h-3 w-3" /> Ver detalhes
             </button>
             {(isAtivo || teste.status === 'sem_resposta') && (
               <button
@@ -175,6 +180,22 @@ function TesteCard({
                 <TrendingUp className="h-3 w-3" /> Converter
               </button>
             )}
+            {teste.status === 'pago' && (
+              <button
+                onClick={onAtivar}
+                className="h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all"
+                style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' }}
+              >
+                <Zap className="h-3 w-3" /> Ativar cliente
+              </button>
+            )}
+            <button
+              onClick={onAbrirPainel2}
+              className="h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all"
+              style={{ background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}
+            >
+              <ExternalLink className="h-3 w-3" /> Painel 2
+            </button>
           </div>
         </div>
       </div>
@@ -211,10 +232,9 @@ export function TestesPage() {
   }, [])
 
   const metricas = {
-    testesAtivosHoje: testes.filter(t => t.status === 'ativo').length,
-    testesExpirando: testes.filter(t => t.status === 'ativo').length,
-    testesPagos: testes.filter(t => t.status === 'pago').length,
-    conversaoDia: testes.length > 0 ? Math.round((testes.filter(t => t.status === 'pago').length / testes.length) * 100) : 0,
+    testesAtivos: testes.filter(t => t.status === 'ativo').length,
+    testesExpirados: testes.filter(t => t.status === 'expirado').length,
+    testesConvertidos: testes.filter(t => t.status === 'pago').length,
   }
 
   const testesFiltrados = testes.filter(t => {
@@ -231,10 +251,14 @@ export function TestesPage() {
     return (ordem[a.status] ?? 9) - (ordem[b.status] ?? 9)
   })
 
-  const handleWhatsApp = (t: Teste) => {
-    const tel = t.telefone.replace(/\D/g, '')
-    const msg = encodeURIComponent(`Ola ${t.cliente}! Segue seu acesso:\n\nApp: ${t.app}\nServidor: ${t.servidor}\nUsuario: ${t.usuario}\nSenha: ${t.senha}\nValidade: ${t.validade}`)
-    window.open(`https://wa.me/55${tel}?text=${msg}`, '_blank')
+  const handleVerDetalhes = (teste: Teste) => {
+    addToast('info', `Detalhes: ${teste.usuario} / ${teste.senha}`)
+  }
+
+  const handleAbrirPainel2 = (teste: Teste) => {
+    const url = `https://painel2.centralplayplus.com.br?source=painel1&test_id=${teste.id}&flow=test_created`
+    window.open(url, '_blank')
+    addToast('success', 'Abrindo Painel 2...')
   }
 
   return (
@@ -242,16 +266,18 @@ export function TestesPage() {
       {/* Header centralizado */}
       <div className="text-center mb-8 max-w-xl">
         <div className="flex items-center justify-center gap-2 mb-3">
-          <Radio className="h-4 w-4 animate-pulse" style={{ color: '#60a5fa' }} />
-          <span className="text-xs text-slate-500 uppercase tracking-widest font-medium">Monitoramento ao vivo</span>
+          <Clock className="h-4 w-4" style={{ color: '#60a5fa' }} />
+          <span className="text-xs text-slate-500 uppercase tracking-widest font-medium">Testes do dia</span>
         </div>
         <h1 className="text-2xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-          Testes em tempo real
+          Testes do dia
         </h1>
         <p className="text-slate-500 text-sm">
-          {metricas.testesAtivosHoje} testes ativos
-          {metricas.testesExpirando > 0 && ` · ${metricas.testesExpirando} expirando em breve`}
+          {metricas.testesAtivos} testando
+          {metricas.testesExpirados > 0 && ` · ${metricas.testesExpirados} expirados`}
+          {metricas.testesConvertidos > 0 && ` · ${metricas.testesConvertidos} convertidos`}
         </p>
+        <p className="text-[10px] text-slate-600 mt-1">Duração do teste: 1 hora e 15 minutos</p>
         <p className="mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-medium"
            style={{ background: dataSource === 'supabase' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: dataSource === 'supabase' ? '#4ade80' : '#fbbf24' }}>
           Fonte: {dataSource === 'supabase' ? 'Supabase' : 'Mock'}
@@ -261,10 +287,9 @@ export function TestesPage() {
       {/* KPIs compactos */}
       <div className="flex items-center gap-8 mb-8">
         {[
-          { label: 'Ativos', value: metricas.testesAtivosHoje, color: '#22c55e' },
-          { label: 'Expirando', value: metricas.testesExpirando, color: '#f59e0b' },
-          { label: 'Pagos', value: metricas.testesPagos, color: '#3b82f6' },
-          { label: 'Conversao', value: `${metricas.conversaoDia}%`, color: '#a78bfa' },
+          { label: 'Testando', value: metricas.testesAtivos, color: '#22c55e' },
+          { label: 'Expirados', value: metricas.testesExpirados, color: '#ef4444' },
+          { label: 'Convertidos', value: metricas.testesConvertidos, color: '#3b82f6' },
         ].map(({ label, value, color }) => (
           <div key={label} className="text-center">
             <p className="text-xl font-bold" style={{ color, fontFamily: 'var(--font-display)' }}>{value}</p>
@@ -319,9 +344,13 @@ export function TestesPage() {
               <TesteCard
                 key={teste.id}
                 teste={teste}
-                onWhatsApp={() => handleWhatsApp(teste)}
-                onReenviar={() => { handleWhatsApp(teste); addToast('success', 'Abrindo WhatsApp...') }}
+                onVerDetalhes={() => handleVerDetalhes(teste)}
                 onConverter={() => addToast('success', `${teste.cliente} movido para Interessado!`)}
+                onAtivar={() => {
+                  window.dispatchEvent(new CustomEvent('centralplay:navigate', { detail: { page: 'contas', test_id: teste.id } }))
+                  addToast('success', 'Abrindo ativação...')
+                }}
+                onAbrirPainel2={() => handleAbrirPainel2(teste)}
               />
             ))
           )}

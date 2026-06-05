@@ -341,6 +341,20 @@ export function ContasPage() {
     )
   })
 
+  // Ordenar: vagas livres primeiro, depois por quantidade de vagas
+  const contasOrdenadas = [...contasFiltradas].sort((a, b) => {
+    const vagasLivresA = a.vagasTotal - a.clientesVinculados.length
+    const vagasLivresB = b.vagasTotal - b.clientesVinculados.length
+    // Contas com vaga livre primeiro
+    if (vagasLivresA > 0 && vagasLivresB === 0) return -1
+    if (vagasLivresA === 0 && vagasLivresB > 0) return 1
+    // Entre contas com vaga livre, priorizar as com 1 cliente (familia incompleta)
+    if (vagasLivresA > 0 && vagasLivresB > 0) {
+      return a.clientesVinculados.length - b.clientesVinculados.length
+    }
+    return 0
+  })
+
   const confirmarAtivacao = async (cliente: Cliente, recommendation: ActivationRecommendation | null) => {
     if (!ativarTarget) return
     const { conta } = ativarTarget
@@ -427,20 +441,24 @@ export function ContasPage() {
 
         {/* Lista */}
         <div className="w-full max-w-2xl space-y-3">
-          {contasFiltradas.length === 0 ? (
+          {contasOrdenadas.length === 0 ? (
             <div className="rounded-xl p-12 text-center" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
               <Layers className="h-10 w-10 mx-auto mb-3" style={{ color: '#1e293b' }} />
               <p className="text-slate-500 text-sm">Nenhuma conta encontrada</p>
             </div>
           ) : (
-            contasFiltradas.map((conta) => (
-              <AccountGroupCard
-                key={conta.id}
-                conta={conta}
-                onAtivar={(index) => setAtivarTarget({ conta, index })}
-                onCredenciais={() => setCredenciais(conta)}
-              />
-            ))
+            contasOrdenadas.map((conta) => {
+              const temVagaLivre = conta.clientesVinculados.length < conta.vagasTotal
+              return (
+                <AccountGroupCard
+                  key={conta.id}
+                  conta={conta}
+                  destacar={temVagaLivre}
+                  onAtivar={(index) => setAtivarTarget({ conta, index })}
+                  onCredenciais={() => setCredenciais(conta)}
+                />
+              )
+            })
           )}
         </div>
       </div>

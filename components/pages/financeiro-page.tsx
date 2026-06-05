@@ -122,7 +122,7 @@ function Bar({ label, value, max, color, suffix = '' }: { label: string; value: 
   )
 }
 
-// ——— Credito do painel ———
+// ——— Credito do painel - mostrar como telas/ativações ———
 function CreditoCard({ credito }: { credito: CreditoPainel }) {
   const baixo = credito.alertaBaixo
   return (
@@ -143,18 +143,18 @@ function CreditoCard({ credito }: { credito: CreditoPainel }) {
           </div>
           <div>
             <p className="text-sm font-medium text-white">{credito.painel}</p>
-            <p className="text-[10px] text-slate-500">R$ {credito.custoPorAtivacao.toFixed(2)}/ativação</p>
+            <p className="text-[10px] text-slate-500">Custo: R$ {credito.custoPorAtivacao.toFixed(2)}/tela</p>
           </div>
         </div>
         <div className="text-right">
           <p className="text-lg font-bold" style={{ color: baixo ? '#ef4444' : '#22c55e', fontFamily: 'var(--font-display)' }}>
-            R$ {credito.saldo.toFixed(0)}
+            {credito.ativacoesRestantes} {credito.ativacoesRestantes === 1 ? 'tela' : 'telas'}
           </p>
-          <p className="text-[10px] text-slate-500">saldo</p>
+          <p className="text-[10px] text-slate-500">disponíveis</p>
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-slate-500">{credito.ativacoesRestantes} ativações restantes</span>
+        <span className="text-[11px] text-slate-500">Saldo: R$ {credito.saldo.toFixed(0)}</span>
         {baixo && (
           <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ background: 'rgba(239,68,68,0.12)', color: '#f87171' }}>
             Recarregar
@@ -311,14 +311,16 @@ export function FinanceiroPage() {
         </motion.div>
       )}
 
-      {/* Créditos dos painéis */}
+      {/* Créditos dos painéis - mostrar como telas */}
       <div className="w-full max-w-4xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Wallet className="h-4 w-4" style={{ color: '#60a5fa' }} />
             <h2 className="text-sm font-semibold text-white">Créditos dos painéis</h2>
           </div>
-          <span className="text-xs text-slate-500">Total: R$ {fin.creditosDisponiveis.toFixed(0)}</span>
+          <span className="text-xs text-slate-500">
+            Total: {finance.creditos.reduce((acc, c) => acc + c.ativacoesRestantes, 0)} telas disponíveis
+          </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {finance.creditos.map((credito) => (

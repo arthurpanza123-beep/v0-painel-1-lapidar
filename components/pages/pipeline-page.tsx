@@ -3,29 +3,50 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Kanban, X, MessageCircle, ArrowRight, Phone, Clock,
-  Tv2, Server, DollarSign
+  Kanban, X, ArrowRight, Phone, Clock,
+  Tv2, Server, ExternalLink
 } from 'lucide-react'
 import { MOCK_PIPELINE, type LeadPipeline, type EtapaPipeline } from '@/lib/mock-data'
 import { useToast } from '@/components/ui/toast'
 
-// Fluxo correto solicitado pelo usuário
+// Pipeline do dia - apenas 5 colunas
 const ETAPAS: { id: EtapaPipeline; label: string; color: string; glow: string }[] = [
   { id: 'novo_lead',    label: 'Lead',           color: '#3b82f6', glow: '59,130,246' },
   { id: 'contato',      label: 'Baixando app',   color: '#6366f1', glow: '99,102,241' },
   { id: 'teste_gerado', label: 'Testando',       color: '#f59e0b', glow: '245,158,11' },
   { id: 'testando',     label: 'Finalizou',      color: '#eab308', glow: '234,179,8' },
-  { id: 'interessado',  label: 'Interesse',      color: '#a78bfa', glow: '167,139,250' },
   { id: 'pagou',        label: 'Pagou',          color: '#22c55e', glow: '34,197,94' },
-  { id: 'ativado',      label: 'Ativado',        color: '#14b8a6', glow: '20,184,166' },
-  { id: 'renovacao',    label: 'Renovação',      color: '#f97316', glow: '249,115,22' },
 ]
 
+// Filtrar somente leads do dia atual (e não ativados/renovação)
+function isLeadDoDia(lead: LeadPipeline): boolean {
+  const hoje = new Date()
+  const hojeStr = hoje.toLocaleDateString('pt-BR') // DD/MM/YYYY
+  
+  // Excluir ativados e renovações do pipeline do dia
+  if (lead.etapa === 'ativado' || lead.etapa === 'renovacao' || lead.etapa === 'interessado') {
+    return false
+  }
+  
+  // Verificar se foi criado ou atualizado hoje
+  const criadoHoje = lead.criadoEm.includes(hojeStr) || lead.atualizadoEm.includes(hojeStr)
+  
+  // Para leads em teste_gerado ou testando, sempre mostrar se ainda ativo
+  if (lead.etapa === 'teste_gerado' || lead.etapa === 'testando' || lead.etapa === 'pagou') {
+    return true
+  }
+  
+  return criadoHoje
+}
+
 export function PipelinePage() {
-  const [leads, setLeads] = useState<LeadPipeline[]>(MOCK_PIPELINE)
+  const [allLeads, setAllLeads] = useState<LeadPipeline[]>(MOCK_PIPELINE)
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock')
   const [selecionado, setSelecionado] = useState<LeadPipeline | null>(null)
   const { addToast } = useToast()
+
+  // Filtrar apenas leads do dia
+  const leads = allLeads.filter(isLeadDoDia)
 
   useEffect(() => {
     let alive = true
@@ -35,11 +56,11 @@ export function PipelinePage() {
         if (!res.ok) throw new Error('Falha ao carregar pipeline')
         const payload = await res.json()
         if (!alive) return
-        setLeads(Array.isArray(payload.items) ? payload.items : MOCK_PIPELINE)
+        setAllLeads(Array.isArray(payload.items) ? payload.items : MOCK_PIPELINE)
         setDataSource(payload.data_source === 'supabase' ? 'supabase' : 'mock')
       } catch {
         if (!alive) return
-        setLeads(MOCK_PIPELINE)
+        setAllLeads(MOCK_PIPELINE)
         setDataSource('mock')
       }
     }
@@ -51,7 +72,7 @@ export function PipelinePage() {
     const idx = ETAPAS.findIndex(e => e.id === lead.etapa)
     if (idx < 0 || idx >= ETAPAS.length - 1) return
     const proxima = ETAPAS[idx + 1]
-    setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, etapa: proxima.id } : l))
+    setAllLeads(prev => prev.map(l => l.id === lead.id ? { ...l, etapa: proxima.id } : l))
     setSelecionado(prev => prev && prev.id === lead.id ? { ...prev, etapa: proxima.id } : prev)
     addToast('success', `${lead.nome} → ${proxima.label}`)
   }
@@ -71,8 +92,8 @@ export function PipelinePage() {
               <Kanban className="h-5 w-5" style={{ color: '#a78bfa' }} />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>Pipeline</h1>
-              <p className="text-xs text-slate-500">{totalDia} leads no funil · clique para detalhes</p>
+              <h1 className="text-xl font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>Pipeline de hoje</h1>
+              <p className="text-xs text-slate-500">{totalDia} leads no funil do dia · clique para detalhes</p>
               <p className="mt-1 inline-flex items-center gap-2 rounded-full px-2.5 py-0.5 text-[10px] font-medium"
                  style={{ background: dataSource === 'supabase' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: dataSource === 'supabase' ? '#4ade80' : '#fbbf24' }}>
                 Fonte: {dataSource === 'supabase' ? 'Supabase' : 'Mock'}
@@ -99,12 +120,14 @@ export function PipelinePage() {
           })}
         </div>
 
-        {/* Kanban */}
+        {/* Kanban compacto */}
         <div className="flex gap-3 overflow-x-auto pb-4">
           {ETAPAS.map(etapa => {
             const cards = leads.filter(l => l.etapa === etapa.id)
+            const isLeadColumn = etapa.id === 'novo_lead'
+            
             return (
-              <div key={etapa.id} className="shrink-0" style={{ width: 220 }}>
+              <div key={etapa.id} className="shrink-0" style={{ width: 200 }}>
                 {/* Cabeçalho coluna */}
                 <div className="flex items-center justify-between mb-3 px-1">
                   <div className="flex items-center gap-2">
@@ -121,23 +144,50 @@ export function PipelinePage() {
 
                 {/* Cards */}
                 <div
-                  className="space-y-2 rounded-xl p-2 min-h-[120px]"
+                  className="space-y-2 rounded-xl p-2 min-h-[100px]"
                   style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid var(--border)' }}
                 >
                   <AnimatePresence mode="popLayout">
-                    {cards.map(lead => (
-                      <PipelineCard
-                        key={lead.id}
-                        lead={lead}
-                        etapa={etapa}
-                        onClick={() => setSelecionado(lead)}
-                        onAvancar={() => avancar(lead)}
-                        isLast={etapa.id === 'renovacao'}
-                      />
-                    ))}
+                    {isLeadColumn && cards.length > 0 ? (
+                      // Para coluna Lead, mostrar apenas contador se houver muitos
+                      cards.length > 3 ? (
+                        <motion.div
+                          layout
+                          initial={{ opacity: 0, scale: 0.96 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="rounded-lg p-4 text-center"
+                          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+                        >
+                          <p className="text-2xl font-bold" style={{ color: etapa.color }}>{cards.length}</p>
+                          <p className="text-[10px] text-slate-500">novos leads</p>
+                        </motion.div>
+                      ) : (
+                        cards.map(lead => (
+                          <PipelineCard
+                            key={lead.id}
+                            lead={lead}
+                            etapa={etapa}
+                            onClick={() => setSelecionado(lead)}
+                            onAvancar={() => avancar(lead)}
+                            isLast={etapa.id === 'pagou'}
+                          />
+                        ))
+                      )
+                    ) : (
+                      cards.map(lead => (
+                        <PipelineCard
+                          key={lead.id}
+                          lead={lead}
+                          etapa={etapa}
+                          onClick={() => setSelecionado(lead)}
+                          onAvancar={() => avancar(lead)}
+                          isLast={etapa.id === 'pagou'}
+                        />
+                      ))
+                    )}
                   </AnimatePresence>
                   {cards.length === 0 && (
-                    <div className="flex items-center justify-center h-20 text-[11px] text-slate-700">
+                    <div className="flex items-center justify-center h-16 text-[10px] text-slate-700">
                       Vazio
                     </div>
                   )}
@@ -172,6 +222,9 @@ function PipelineCard({
   onAvancar: () => void
   isLast: boolean
 }) {
+  // Extrair horário da data
+  const horario = lead.criadoEm.split(' ')[1] || ''
+  
   return (
     <motion.div
       layout
@@ -184,24 +237,22 @@ function PipelineCard({
     >
       <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ background: etapa.color }} />
       <p className="text-sm font-medium text-white truncate mb-1">{lead.nome}</p>
-      <p className="text-[11px] text-slate-500 flex items-center gap-1 mb-2">
-        <Phone className="h-3 w-3" /> {lead.telefone}
+      <p className="text-[10px] text-slate-500 flex items-center gap-1 mb-1">
+        <Phone className="h-2.5 w-2.5" /> {lead.telefone}
       </p>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          {lead.app && <span className="text-[10px] text-slate-400 truncate">{lead.app}</span>}
-          {lead.valor && (
-            <span className="text-[10px] font-semibold" style={{ color: etapa.color }}>R$ {lead.valor}</span>
-          )}
+          {lead.app && <span className="text-[9px] text-slate-500 truncate">{lead.app}</span>}
+          {horario && <span className="text-[9px] text-slate-600">{horario}</span>}
         </div>
         {!isLast && (
           <button
             onClick={(e) => { e.stopPropagation(); onAvancar() }}
-            className="opacity-0 group-hover:opacity-100 transition-opacity flex h-6 w-6 items-center justify-center rounded-md shrink-0"
+            className="opacity-0 group-hover:opacity-100 transition-opacity flex h-5 w-5 items-center justify-center rounded-md shrink-0"
             style={{ background: `${etapa.color}1f`, color: etapa.color }}
             title="Avançar etapa"
           >
-            <ArrowRight className="h-3.5 w-3.5" />
+            <ArrowRight className="h-3 w-3" />
           </button>
         )}
       </div>
@@ -218,12 +269,12 @@ function LeadDrawer({
   onAvancar: () => void
 }) {
   const { addToast } = useToast()
-  const isLast = etapa.id === 'renovacao'
+  const isLast = etapa.id === 'pagou'
 
-  const abrirWhats = () => {
-    const tel = lead.telefone.replace(/\D/g, '')
-    window.open(`https://wa.me/55${tel}`, '_blank')
-    addToast('success', 'Abrindo WhatsApp...')
+  const abrirPainel2 = () => {
+    const url = `https://painel2.centralplayplus.com.br?source=painel1&lead_id=${lead.id}&flow=pipeline`
+    window.open(url, '_blank')
+    addToast('success', 'Abrindo Painel 2...')
   }
 
   return (
@@ -261,7 +312,6 @@ function LeadDrawer({
           <div className="space-y-3 mb-6">
             {lead.app && <InfoRow icon={Tv2} label="Aplicativo" value={lead.app} />}
             {lead.servidor && <InfoRow icon={Server} label="Servidor" value={lead.servidor} />}
-            {lead.valor && <InfoRow icon={DollarSign} label="Valor" value={`R$ ${lead.valor}`} />}
             <InfoRow icon={Clock} label="Atualizado" value={lead.atualizadoEm} />
           </div>
 
@@ -286,11 +336,11 @@ function LeadDrawer({
               </button>
             )}
             <button
-              onClick={abrirWhats}
+              onClick={abrirPainel2}
               className="w-full h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
-              style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.25)', color: '#4ade80' }}
+              style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa' }}
             >
-              <MessageCircle className="h-4 w-4" /> WhatsApp
+              <ExternalLink className="h-4 w-4" /> Abrir no Painel 2
             </button>
           </div>
         </div>
