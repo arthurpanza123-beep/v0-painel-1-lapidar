@@ -1,228 +1,173 @@
 "use client"
 
 import { useState } from "react"
-import { Server, CheckCircle2, XCircle, Plus } from "lucide-react"
-import { cn } from "@/lib/utils"
-
-// Regras de telas:
-// Yellow Box = 2 telas
-// CineMax = 2 telas
-// Ninety = 1 tela
+import { Search, FolderOpen, Plus, CheckCircle2 } from "lucide-react"
 
 interface Tela {
-  numero: number
-  cliente?: string
+  nome: string
   vencimento?: string
+  vazia?: boolean
 }
 
 interface Conta {
   id: string
+  num: string
   app: string
-  painel: "Yellow Box" | "CineMax" | "Ninety"
+  servidor: string
+  status: "Livre" | "Cheio" | "Disponivel"
+  cor: string
+  corBg: string
   telas: Tela[]
-  vencimento: string
+  totalTelas: number
+  ocupadas: number
 }
-
-const maxTelas = (painel: string) => painel === "Ninety" ? 1 : 2
 
 const CONTAS_DEMO: Conta[] = [
-  {
-    id: "4821",
-    app: "XCloud",
-    painel: "Yellow Box",
-    vencimento: "2025-08-15",
-    telas: [
-      { numero: 1, cliente: "João Silva", vencimento: "2025-07-05" },
-      { numero: 2 },
-    ],
-  },
-  {
-    id: "4820",
-    app: "XCloud",
-    painel: "CineMax",
-    vencimento: "2025-08-10",
-    telas: [
-      { numero: 1, cliente: "Maria Oliveira", vencimento: "2025-09-04" },
-      { numero: 2, cliente: "Pedro Santos", vencimento: "2025-07-20" },
-    ],
-  },
-  {
-    id: "4819",
-    app: "Blessed Player",
-    painel: "Ninety",
-    vencimento: "2025-07-30",
-    telas: [
-      { numero: 1 },
-    ],
-  },
-  {
-    id: "4818",
-    app: "PlaySim",
-    painel: "Yellow Box",
-    vencimento: "2025-08-01",
-    telas: [
-      { numero: 1, cliente: "Ana Costa", vencimento: "2025-07-15" },
-      { numero: 2, cliente: "Carlos Lima", vencimento: "2025-08-01" },
-    ],
-  },
-  {
-    id: "4817",
-    app: "FunPlay",
-    painel: "CineMax",
-    vencimento: "2025-09-01",
-    telas: [
-      { numero: 1 },
-      { numero: 2 },
-    ],
-  },
+  { id: "1", num: "#5689", app: "XCloud", servidor: "Brasil / Yellow Box", status: "Livre", cor: "#10b981", corBg: "rgba(16,185,129,0.15)", telas: [{ nome: "Cliente 1: Jessy Margareth", vencimento: "vence em breve" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "2", num: "#9641", app: "XCloud", servidor: "Brasil / Yellow Box", status: "Livre", cor: "#10b981", corBg: "rgba(16,185,129,0.15)", telas: [{ nome: "Cliente 1: Luis Henrique" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "3", num: "#430", app: "XCloud", servidor: "Servidor", status: "Cheio", cor: "#f59e0b", corBg: "rgba(245,158,11,0.15)", telas: [{ nome: "Cliente 1: Slevaldo Santos" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "4", num: "#7833", app: "XCloud", servidor: "Ninety", status: "Cheio", cor: "#f59e0b", corBg: "rgba(245,158,11,0.15)", telas: [{ nome: "Cliente 1: PauloHenrique" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "5", num: "#8541", app: "Fun Play", servidor: "DeckTop / Magic", status: "Cheio", cor: "#f59e0b", corBg: "rgba(245,158,11,0.15)", telas: [{ nome: "Cliente 1: Cristina Sousa" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "6", num: "#0313", app: "XCloud", servidor: "Brasil / Yellow Box", status: "Livre", cor: "#10b981", corBg: "rgba(16,185,129,0.15)", telas: [{ nome: "Cliente 1: Donize Falcao" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "7", num: "#2454", app: "XCloud", servidor: "Brasil / Yellow Box", status: "Disponivel", cor: "#6b7280", corBg: "rgba(107,114,128,0.1)", telas: [{ nome: "Cliente 1: Fabricio" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "8", num: "#3621", app: "XCloud", servidor: "AnaPlay", status: "Livre", cor: "#10b981", corBg: "rgba(16,185,129,0.15)", telas: [{ nome: "Cliente 1: Carlos" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "9", num: "#4539", app: "XCloud", servidor: "Brasil / Yellow Box", status: "Livre", cor: "#10b981", corBg: "rgba(16,185,129,0.15)", telas: [{ nome: "Cliente 1: Juan" }, { vazia: true, nome: "" }], totalTelas: 2, ocupadas: 1 },
+  { id: "10", num: "#7543", app: "XCloud", servidor: "Brasil / Yellow Box", status: "Cheio", cor: "#f59e0b", corBg: "rgba(245,158,11,0.15)", telas: [{ nome: "Cliente 1: Cloves" }, { nome: "Cliente 2: Yuri Italo" }], totalTelas: 2, ocupadas: 2 },
 ]
 
-function ContaCard({ conta }: { conta: Conta }) {
-  const max = maxTelas(conta.painel)
-  const vagasLivres = conta.telas.filter((t) => !t.cliente).length
-  const cheia = vagasLivres === 0
-
-  return (
-    <div
-      className={cn(
-        "rounded-lg border bg-card p-4 space-y-3 transition-colors",
-        !cheia
-          ? "border-[oklch(0.62_0.18_155)]/30 hover:border-[oklch(0.62_0.18_155)]/50"
-          : "border-border hover:border-border/80"
-      )}
-    >
-      {/* Header da conta */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <Server className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-xs font-semibold text-foreground">#{conta.id}</span>
-            <span className="text-[11px] text-muted-foreground">{conta.app}</span>
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{conta.painel} · vence {new Date(conta.vencimento).toLocaleDateString("pt-BR")}</p>
-        </div>
-        <div>
-          {cheia ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-destructive/20 bg-destructive/10 px-2 py-0.5 text-[11px] font-medium text-destructive">
-              <XCircle className="h-3 w-3" />
-              Conta cheia
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full border border-[oklch(0.62_0.18_155)]/20 bg-[oklch(0.62_0.18_155)]/10 px-2 py-0.5 text-[11px] font-medium text-[oklch(0.62_0.18_155)]">
-              <CheckCircle2 className="h-3 w-3" />
-              Vaga livre — economize crédito
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Telas */}
-      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${max}, 1fr)` }}>
-        {Array.from({ length: max }).map((_, i) => {
-          const tela = conta.telas[i]
-          const ocupada = !!tela?.cliente
-          return (
-            <div
-              key={i}
-              className={cn(
-                "rounded border px-3 py-2.5 text-xs",
-                ocupada
-                  ? "border-border bg-muted/20"
-                  : "border-dashed border-[oklch(0.62_0.18_155)]/40 bg-[oklch(0.62_0.18_155)]/5"
-              )}
-            >
-              <p className={cn("text-[10px] font-medium uppercase tracking-wide mb-1", ocupada ? "text-muted-foreground" : "text-[oklch(0.62_0.18_155)]/70")}>
-                Tela 0{i + 1}
-              </p>
-              {ocupada ? (
-                <>
-                  <p className="font-medium text-foreground text-[11px]">{tela.cliente}</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    Vence {new Date(tela.vencimento!).toLocaleDateString("pt-BR")}
-                  </p>
-                </>
-              ) : (
-                <p className="text-[11px] text-[oklch(0.62_0.18_155)]/80">Vaga disponivel</p>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 export default function ContasPage() {
-  const [filtro, setFiltro] = useState<"todas" | "com-vaga" | "cheias">("todas")
+  const [busca, setBusca] = useState("")
 
-  const filtradas = CONTAS_DEMO.filter((c) => {
-    const vagasLivres = c.telas.filter((t) => !t.cliente).length
-    if (filtro === "com-vaga") return vagasLivres > 0
-    if (filtro === "cheias") return vagasLivres === 0
-    return true
-  })
+  const totalContas = CONTAS_DEMO.length
+  const livres = CONTAS_DEMO.filter((c) => c.status === "Livre").length
+  const cheias = CONTAS_DEMO.filter((c) => c.status === "Cheio").length
+  const totalVagas = CONTAS_DEMO.reduce((acc, c) => acc + (c.totalTelas - c.ocupadas), 0)
 
-  const totalVagas = CONTAS_DEMO.reduce((acc, c) => acc + c.telas.filter((t) => !t.cliente).length, 0)
+  const filtradas = CONTAS_DEMO.filter((c) =>
+    busca === "" ||
+    c.num.toLowerCase().includes(busca.toLowerCase()) ||
+    c.app.toLowerCase().includes(busca.toLowerCase()) ||
+    c.servidor.toLowerCase().includes(busca.toLowerCase()) ||
+    c.telas.some((t) => t.nome.toLowerCase().includes(busca.toLowerCase()))
+  )
 
   return (
-    <div className="space-y-5">
-      {/* Cabeçalho */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <Server className="h-4 w-4 text-primary" />
-            Contas
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Gestão de contas e telas. Yellow Box e CineMax = 2 telas. Ninety = 1 tela.
-          </p>
+    <div className="px-6 py-6 max-w-[900px] mx-auto">
+      {/* Header */}
+      <div className="text-center mb-7">
+        <div className="flex items-center justify-center gap-2 text-xs font-semibold tracking-widest uppercase mb-1.5"
+          style={{ color: "#818cf8" }}>
+          <FolderOpen className="h-3.5 w-3.5" />
+          Contas e Vagas
         </div>
-        <button className="flex items-center gap-1.5 rounded bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
-          <Plus className="h-3.5 w-3.5" />
-          Nova Conta
+        <h1 className="text-2xl font-bold text-foreground mb-1">Contas</h1>
+        <p className="text-sm text-muted-foreground">{totalContas} contas · {totalVagas} vagas livres de 33</p>
+        <span className="inline-block mt-2 text-xs font-medium px-3 py-0.5 rounded-full"
+          style={{ background: "rgba(16,185,129,0.15)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)" }}>
+          Fonte: Supabase
+        </span>
+      </div>
+
+      {/* Stats */}
+      <div className="flex items-center justify-center gap-8 mb-6 text-center">
+        {[
+          { label: "TOTAL", value: String(totalContas), color: "#e2e8f0" },
+          { label: "LIVRE", value: String(livres), color: "#10b981" },
+          { label: "CHEIO", value: String(cheias), color: "#f59e0b" },
+          { label: "VAGAS", value: String(totalVagas), color: "#818cf8" },
+        ].map((s) => (
+          <div key={s.label} className="flex flex-col items-center">
+            <span className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</span>
+            <span className="text-[10px] tracking-widest text-muted-foreground">{s.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Search + New */}
+      <div className="flex items-center gap-3 mb-5">
+        <div className="flex flex-1 items-center gap-2.5 rounded-xl px-4 py-2.5"
+          style={{ background: "#141c2b", border: "1px solid rgba(255,255,255,0.08)" }}>
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            placeholder="Buscar por código, cliente, servidor ou app..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)} />
+        </div>
+        <button className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-medium transition-all"
+          style={{ background: "rgba(99,102,241,0.2)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.3)" }}>
+          <Plus className="h-4 w-4" />
+          Nova conta
         </button>
       </div>
 
-      {/* Alerta vagas */}
-      {totalVagas > 0 && (
-        <div
-          className="flex items-center gap-2 rounded-lg border border-[oklch(0.62_0.18_155)]/30 bg-[oklch(0.62_0.18_155)]/5 px-4 py-3 cursor-pointer hover:bg-[oklch(0.62_0.18_155)]/10 transition-colors"
-          onClick={() => setFiltro("com-vaga")}
-        >
-          <CheckCircle2 className="h-4 w-4 text-[oklch(0.62_0.18_155)]" />
-          <span className="text-xs font-medium text-[oklch(0.62_0.18_155)]">
-            {totalVagas} vaga{totalVagas > 1 ? "s" : ""} livre{totalVagas > 1 ? "s" : ""} — economize crédito ao ativar
-          </span>
-        </div>
-      )}
+      {/* Contas */}
+      <div className="space-y-2">
+        {filtradas.map((c) => {
+          const vagasLivres = c.totalTelas - c.ocupadas
+          return (
+            <div key={c.id} className="rounded-xl overflow-hidden"
+              style={{ backgroundColor: "#0f1623", border: "1px solid rgba(255,255,255,0.06)" }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold"
+                    style={{ background: c.corBg, color: c.cor }}>
+                    {c.num.slice(0, 2)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-foreground">{c.num}</span>
+                      <span className="text-xs text-muted-foreground">{c.app}</span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        style={{ background: c.corBg, color: c.cor, border: `1px solid ${c.cor}30` }}>
+                        {c.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{c.servidor}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {vagasLivres > 0 && (
+                    <span className="flex items-center gap-1" style={{ color: "#10b981" }}>
+                      <CheckCircle2 className="h-3 w-3" />
+                      {vagasLivres} vaga{vagasLivres > 1 ? "s" : ""} livre{vagasLivres > 1 ? "s" : ""}
+                    </span>
+                  )}
+                  <button className="rounded-lg px-3 py-1.5 text-[11px] font-medium transition-all"
+                    style={{ background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.25)" }}>
+                    Ver condições
+                  </button>
+                </div>
+              </div>
 
-      {/* Filtros */}
-      <div className="flex gap-2">
-        {[
-          { key: "todas", label: "Todas" },
-          { key: "com-vaga", label: "Com vaga" },
-          { key: "cheias", label: "Cheias" },
-        ].map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setFiltro(key as typeof filtro)}
-            className={cn(
-              "rounded border px-3 py-1.5 text-xs font-medium transition-colors",
-              filtro === key
-                ? "border-primary bg-primary/15 text-primary"
-                : "border-border text-muted-foreground hover:text-foreground hover:bg-accent"
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+              {/* Barra de ocupação */}
+              <div className="h-0.5 mx-4 mb-3 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <div className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${(c.ocupadas / c.totalTelas) * 100}%`,
+                    background: c.ocupadas === c.totalTelas ? "#f59e0b" : "#10b981",
+                  }} />
+              </div>
 
-      {/* Grid de contas */}
-      <div className="grid gap-3 md:grid-cols-2">
-        {filtradas.map((conta) => (
-          <ContaCard key={conta.id} conta={conta} />
-        ))}
+              {/* Telas */}
+              <div className="px-4 pb-3 space-y-1.5">
+                {c.telas.map((tela, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full shrink-0"
+                      style={{ background: tela.vazia ? "rgba(255,255,255,0.15)" : "#818cf8" }} />
+                    {tela.vazia ? (
+                      <span className="text-xs text-muted-foreground italic">Aloca cliente nesta vaga</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{tela.nome}
+                        {tela.vencimento && <span className="ml-1 text-[10px]">· {tela.vencimento}</span>}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
