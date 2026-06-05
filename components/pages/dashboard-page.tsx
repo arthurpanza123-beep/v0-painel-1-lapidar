@@ -21,6 +21,7 @@ interface DashboardPageProps {
 export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
   const [remoteMetrics, setRemoteMetrics] = useState<DashboardMetrics | undefined>(metrics)
   const [showProjecaoTooltip, setShowProjecaoTooltip] = useState(false)
+  const [renovacaoMensal, setRenovacaoMensal] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -28,6 +29,15 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
       .then((res) => (res.ok ? res.json() : null))
       .then((data: DashboardMetrics | null) => {
         if (!cancelled && data) setRemoteMetrics(data)
+      })
+      .catch(() => undefined)
+    // Renovacao mensal prevista (MRR) vem do financeiro
+    fetch('/api/finance')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.metrics?.renovacaoMensalPrevista != null) {
+          setRenovacaoMensal(data.metrics.renovacaoMensalPrevista)
+        }
       })
       .catch(() => undefined)
     return () => {
@@ -51,7 +61,11 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
   const clientesComValor = MOCK_CLIENTES.filter(c => c.status === 'ativo' && c.valor > 0)
   const clientesSemValor = MOCK_CLIENTES.filter(c => c.status === 'ativo' && (!c.valor || c.valor <= 0)).length
   const receitaPrevista = dashboardMetrics?.revenue_forecast_30d ?? clientesComValor.reduce((acc, c) => acc + c.valor, 0)
-  const projecaoComPerda = receitaPrevista * 0.7 // 30% de perda estimada
+
+  // Renovacao mensal prevista (MRR) - normaliza planos longos por mes (regra do bot)
+  const planMonths: Record<string, number> = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 }
+  const mrrMock = clientesComValor.reduce((acc, c) => acc + c.valor / (planMonths[String(c.plano).toLowerCase().trim()] || 1), 0)
+  const renovacaoMensalPrevista = renovacaoMensal ?? mrrMock
 
   // Créditos como telas/ativações, não R$
   const painelCreditos = dashboardMetrics?.panel_credits
@@ -138,10 +152,10 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
             />
             <div className="relative flex items-start justify-between mb-5">
               <div>
-                <p className="text-xs text-slate-500 mb-1">Receita prevista (30 dias)</p>
+                <p className="text-xs text-slate-500 mb-1">Renovação mensal prevista</p>
                 <div className="flex items-center gap-2">
                   <p className="text-4xl font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>
-                    R$ {receitaPrevista.toFixed(0)}
+                    R$ {renovacaoMensalPrevista.toFixed(0)}
                   </p>
                   <button
                     onClick={() => setShowProjecaoTooltip(!showProjecaoTooltip)}
@@ -152,13 +166,13 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
                     <Info className="h-4 w-4 text-slate-500 hover:text-slate-300 transition-colors" />
                     {showProjecaoTooltip && (
                       <div
-                        className="absolute left-6 top-0 z-50 w-64 p-3 rounded-xl text-left"
+                        className="absolute left-6 top-0 z-50 w-72 p-3 rounded-xl text-left"
                         style={{ background: '#1e2230', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}
                       >
                         <p className="text-xs text-slate-300 mb-2">Como calculamos:</p>
                         <div className="space-y-1.5 text-[11px] text-slate-400">
-                          <p>Previsto: R$ {receitaPrevista.toFixed(0)}</p>
-                          <p>Estimativa com perda de 30%: R$ {projecaoComPerda.toFixed(0)}</p>
+                          <p>Renovação mensal prevista soma clientes mensais ativos (planos longos normalizados por mês), igual à regra operacional do bot.</p>
+                          <p className="text-slate-300 pt-1">Próximos 30 dias por vencimento: R$ {receitaPrevista.toFixed(0)}</p>
                           {clientesSemValor > 0 && (
                             <p className="flex items-center gap-1 text-amber-400">
                               <AlertTriangle className="h-3 w-3" />
@@ -170,9 +184,9 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
                     )}
                   </button>
                 </div>
-                <p className="text-xs flex items-center gap-1 mt-1.5" style={{ color: '#22c55e' }}>
+                <p className="text-xs flex items-center gap-1 mt-1.5" style={{ color: '#60a5fa' }}>
                   <ArrowUpRight className="h-3.5 w-3.5" />
-                  Projeção: R$ {projecaoComPerda.toFixed(0)} (com 30% de perda)
+                  Próximos 30 dias por vencimento: R$ {receitaPrevista.toFixed(0)}
                 </p>
                 {clientesSemValor > 0 && (
                   <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">

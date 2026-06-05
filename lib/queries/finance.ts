@@ -8,6 +8,7 @@ export type FinanceQueryResult = {
     receitaPrevista30d: number
     receitaPrevista60d: number
     receitaPrevista90d: number
+    renovacaoMensalPrevista: number
     lucroEstimado: number
     renovacoesPrevistas: number
     creditosDisponiveis: number
@@ -19,6 +20,16 @@ export type FinanceQueryResult = {
   }
   porPlano: { plano: string; valor: number }[]
   creditos: CreditoPainel[]
+}
+
+// Normaliza o valor de um plano para o equivalente mensal (regra MRR do bot).
+const PLAN_MONTHS: Record<string, number> = {
+  mensal: 1, trimestral: 3, semestral: 6, anual: 12,
+}
+function monthlyEquivalent(plano: string | null | undefined, valor: number): number {
+  const key = String(plano || '').toLowerCase().trim()
+  const months = PLAN_MONTHS[key] || 1
+  return valor / months
 }
 
 type ClientRow = { id: string; status: string | null }
@@ -35,6 +46,7 @@ function money(cents?: number | null): number {
 function buildMockResult(): FinanceQueryResult {
   const clientesAtivos = MOCK_CLIENTES.filter((c) => c.status === 'ativo')
   const receitaMesAtual = clientesAtivos.reduce((acc, c) => acc + c.valor, 0)
+  const renovacaoMensalPrevista = clientesAtivos.reduce((acc, c) => acc + monthlyEquivalent(c.plano, c.valor), 0)
   const creditosDisponiveis = MOCK_CREDITOS.reduce((acc, c) => acc + c.saldo, 0)
   const porPlanoMap = clientesAtivos.reduce<Record<string, number>>((acc, c) => {
     acc[c.plano] = (acc[c.plano] || 0) + c.valor
@@ -48,6 +60,7 @@ function buildMockResult(): FinanceQueryResult {
       receitaPrevista30d: receitaMesAtual,
       receitaPrevista60d: receitaMesAtual * 2,
       receitaPrevista90d: receitaMesAtual * 3,
+      renovacaoMensalPrevista,
       lucroEstimado: receitaMesAtual - MOCK_CREDITOS.reduce((acc, c) => acc + c.custoPorAtivacao * 5, 0),
       renovacoesPrevistas: clientesAtivos.length,
       creditosDisponiveis,
@@ -126,6 +139,9 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
       return acc
     }, {})
     const clientesAtivos = clients.filter((c) => c.status === 'active').length
+    const renovacaoMensalPrevista = renewals
+      .filter((r) => r.status !== 'paid' && r.status !== 'cancelled' && r.amount_cents)
+      .reduce((acc, r) => acc + monthlyEquivalent(r.plan_key, money(r.amount_cents)), 0)
     const testesPagos = tests.filter((t) => t.status === 'converted').length
     const testesAtivosHoje = tests.filter((t) => t.status === 'active').length
     const totalTestes = tests.length
@@ -139,6 +155,7 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
         receitaPrevista30d: forecast(in30),
         receitaPrevista60d: forecast(in60),
         receitaPrevista90d: forecast(in90),
+        renovacaoMensalPrevista,
         lucroEstimado: receitaMesAtual - custoEstimado,
         renovacoesPrevistas: renewals.filter((r) => r.status !== 'paid' && r.status !== 'cancelled').length,
         creditosDisponiveis,
