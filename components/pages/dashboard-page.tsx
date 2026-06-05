@@ -41,7 +41,8 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
 
   // Métricas principais ajustadas
   const hoje = new Date().toLocaleDateString('pt-BR')
-  const leadsHoje = dashboardMetrics?.leads_today ?? MOCK_PIPELINE.filter(l => l.criadoEm.startsWith(hoje.split('/').reverse().join('-').substring(0, 10)) || l.criadoEm.includes(hoje)).length || MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
+  const leadsHojeMock = MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
+  const leadsHoje = dashboardMetrics?.leads_today ?? leadsHojeMock
   const testesHoje = dashboardMetrics?.total_tests ?? MOCK_TESTES.length
   const ativacoesHoje = dashboardMetrics?.activations_today ?? MOCK_PIPELINE.filter(l => l.etapa === 'ativado').length
   const clientesAtivos = dashboardMetrics?.active_clients ?? MOCK_CLIENTES.filter(c => c.status === 'ativo').length
