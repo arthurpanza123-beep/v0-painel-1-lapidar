@@ -183,33 +183,56 @@ export function DebugPage() {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="shrink-0 px-6 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
-        {[
-          { id: 'todos', label: 'Todos', count: metricas.total },
-          { id: 'erro', label: 'Erros', count: metricas.erros, color: '#ef4444' },
-          { id: 'warning', label: 'Avisos', count: metricas.warnings, color: '#f59e0b' },
-          { id: 'success', label: 'Sucesso', count: metricas.success, color: '#22c55e' },
-        ].map((f) => (
-          <button
-            key={f.id}
-            onClick={() => setFilter(f.id)}
-            className="px-3 h-7 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1.5"
-            style={
-              filter === f.id
-                ? { background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.25)', color: '#c4b5fd' }
-                : { background: 'transparent', color: '#64748b' }
-            }
-          >
-            {f.label}
-            <span 
-              className="px-1.5 py-0.5 rounded text-[9px] font-semibold"
-              style={{ background: 'rgba(255,255,255,0.05)', color: f.color || '#94a3b8' }}
+      {/* Busca */}
+      <div className="shrink-0 px-6 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar nos logs..."
+            className="w-full h-9 rounded-lg pl-9 pr-3 text-sm text-white placeholder:text-slate-600 outline-none"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}
+          />
+        </div>
+      </div>
+
+      {/* Filtros por categoria */}
+      <div className="shrink-0 px-6 py-3 border-b flex items-center gap-2 overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
+        {CATEGORIAS.map((cat) => {
+          const count = cat.id === 'todos' ? metricas.total
+            : cat.id === 'erro' ? metricas.erros
+            : cat.id === 'warning' ? metricas.warnings
+            : cat.id === 'success' ? metricas.success
+            : cat.id === 'xcloud' ? metricas.xcloud
+            : cat.id === 'testes' ? metricas.testes
+            : cat.id === 'ativacoes' ? metricas.ativacoes
+            : cat.id === 'renovacoes' ? metricas.renovacoes
+            : 0
+          const ativo = filter === cat.id
+          const Icon = cat.icon
+          return (
+            <button
+              key={cat.id}
+              onClick={() => setFilter(cat.id)}
+              className="px-3 h-8 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1.5 shrink-0"
+              style={
+                ativo
+                  ? { background: `${cat.color}22`, border: `1px solid ${cat.color}44`, color: cat.color }
+                  : { background: 'transparent', border: '1px solid transparent', color: '#64748b' }
+              }
             >
-              {f.count}
-            </span>
-          </button>
-        ))}
+              <Icon className="h-3.5 w-3.5" />
+              {cat.label}
+              <span
+                className="px-1.5 py-0.5 rounded text-[9px] font-semibold"
+                style={{ background: 'rgba(255,255,255,0.05)', color: ativo ? cat.color : '#94a3b8' }}
+              >
+                {count}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       {/* Lista de logs */}
