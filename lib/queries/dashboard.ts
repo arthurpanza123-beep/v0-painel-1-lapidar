@@ -35,6 +35,9 @@ function getDashboardFromMock(): DashboardMetrics {
   const fin  = calcularMetricasFinanceiro()
   const pipe = calcularMetricasPipeline()
 
+  const leadsHoje = MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
+  const ativacoesHoje = MOCK_PIPELINE.filter(l => l.etapa === 'ativado').length
+
   return {
     // KPIs — MOCK
     active_tests:       MOCK_TESTES.filter(t => t.status === 'ativo').length,
@@ -43,6 +46,9 @@ function getDashboardFromMock(): DashboardMetrics {
     leads_in_progress:  MOCK_PIPELINE.filter(
       l => l.etapa !== 'ativado' && l.etapa !== 'renovacao'
     ).length,
+    leads_today:        leadsHoje,
+    activations_today:  ativacoesHoje,
+    open_problems:      2, // Mock fixo
 
     // Financeiro — MOCK
     available_credits:        fin.creditosDisponiveis,
@@ -175,6 +181,9 @@ async function getDashboardFromSupabase(): Promise<DashboardMetrics | null> {
       total_tests: totalTests,
       active_clients: activeClients,
       leads_in_progress: leads + testing + interested,
+      leads_today: leads,
+      activations_today: activated,
+      open_problems: 0,
       available_credits: availableCredits,
       revenue_current_month: sumCents(revenueMonthRes.data),
       revenue_forecast_30d: sumCents(forecast30Res.data),
