@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Users, Search, Phone, Package, Server, Calendar, DollarSign,
-  MessageCircle, RefreshCw, UserCheck, Repeat, Eye, Copy, Bug,
+  RefreshCw, UserCheck, Repeat, Eye, Copy, Bug, ExternalLink, Tv2,
 } from 'lucide-react'
 import {
   MOCK_CLIENTES,
@@ -139,23 +139,23 @@ export function ClientesPage() {
     receita: clientes.filter((c) => c.status === 'ativo').reduce((s, c) => s + c.valor, 0),
   }
 
-  const whats = (c: Cliente) => {
-    window.open(`https://wa.me/55${c.telefone.replace(/\D/g, '')}`, '_blank')
-    addToast('success', 'Abrindo WhatsApp...')
+  const abrirPainel2 = (c: Cliente) => {
+    window.open(`https://painel2.centralplayplus.com.br?source=painel1&client_id=${c.id}&flow=client_action`, '_blank')
+    addToast('success', 'Abrindo Painel 2...')
   }
 
   const buildActions = (c: Cliente): ActionItem[] => [
-    { label: 'Abrir WhatsApp', icon: MessageCircle, onClick: () => whats(c), color: '#4ade80' },
+    { label: 'Abrir no Painel 2', icon: ExternalLink, onClick: () => abrirPainel2(c), color: '#4ade80' },
     { label: 'Renovar', icon: RefreshCw, onClick: () => addToast('success', `Renovacao de ${c.nome} iniciada`), color: '#60a5fa' },
     { label: 'Ativar cliente', icon: UserCheck, onClick: () => addToast('success', `${c.nome} ativado`) },
     { label: 'Trocar aplicativo', icon: Repeat, onClick: () => addToast('info', 'Selecione o novo app') },
-    { label: 'Trocar servidor', icon: Server, onClick: () => addToast('info', 'Selecione o novo servidor') },
-    { label: 'Debugar problema', icon: Bug, onClick: () => addToast('info', 'Abrindo suporte tecnico'), color: '#a78bfa' },
-    { label: 'Ver dados', icon: Eye, onClick: () => setSelecionado(c) },
+    { label: 'Ativar segunda tela', icon: Tv2, onClick: () => addToast('info', 'Verificando vaga disponivel') },
+    { label: 'Registrar problema', icon: Bug, onClick: () => addToast('info', 'Abrindo registro de problema'), color: '#a78bfa' },
+    { label: 'Ver detalhes', icon: Eye, onClick: () => setSelecionado(c) },
     {
-      label: 'Copiar mensagem', icon: Copy, onClick: () => {
-        navigator.clipboard.writeText(`Ola ${c.nome}! Seu acesso ${c.app} (${c.servidor}) vence em ${c.vencimento}.`)
-        addToast('success', 'Mensagem copiada')
+      label: 'Copiar dados', icon: Copy, onClick: () => {
+        navigator.clipboard.writeText(`${c.nome} | ${c.telefone} | ${c.app} | ${c.servidor} | Vence: ${c.vencimento}`)
+        addToast('success', 'Dados copiados')
       },
     },
   ]
@@ -246,7 +246,7 @@ export function ClientesPage() {
       <ClientDrawer
         cliente={selecionado}
         onClose={() => setSelecionado(null)}
-        onWhatsApp={whats}
+        onPainel2={abrirPainel2}
         onRenovar={(c) => addToast('success', `Renovacao de ${c.nome} iniciada`)}
       />
     </>

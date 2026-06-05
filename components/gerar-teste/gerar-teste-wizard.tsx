@@ -815,7 +815,7 @@ function StepDados({
         />
         <InputField
           icon={<Phone className="h-[18px] w-[18px]" />}
-          label="Telefone / WhatsApp"
+          label="Telefone"
           placeholder="(22) 99999-9999"
           type="tel"
           value={form.telefone}

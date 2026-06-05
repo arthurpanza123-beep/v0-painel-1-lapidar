@@ -209,6 +209,9 @@ export interface DashboardMetrics {
   total_tests: number
   active_clients: number
   leads_in_progress: number
+  leads_today: number
+  activations_today: number
+  open_problems: number
 
   /** Financeiro */
   available_credits: number
