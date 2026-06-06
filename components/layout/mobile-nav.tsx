@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import type { NavPage } from '@/app/page'
@@ -47,15 +48,14 @@ export function MobileNav({ activePage, onNavigate }: MobileNavProps) {
         style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--sidebar-border)' }}
       >
         <div className="flex items-center gap-2.5 min-w-0">
-          <div
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden"
-            style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.28)' }}
-          >
-            <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="20" aria-label="Central Play Plus">
-              <path d="M14 11L30 20L14 29V11Z" fill="#3b82f6" />
-              <rect x="26" y="7" width="2" height="8" rx="1" fill="#60a5fa" opacity="0.7" />
-              <rect x="23" y="10" width="8" height="2" rx="1" fill="#60a5fa" opacity="0.7" />
-            </svg>
+          <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+            <Image
+              src="/images/central-play-logo.png"
+              alt="Central Play Plus"
+              fill
+              sizes="32px"
+              className="object-cover object-left scale-[2.2]"
+            />
           </div>
           <p className="text-sm font-semibold text-white truncate" style={{ fontFamily: 'var(--font-display)' }}>{activeLabel}</p>
         </div>
@@ -87,7 +87,13 @@ export function MobileNav({ activePage, onNavigate }: MobileNavProps) {
               style={{ background: 'var(--background)', borderLeft: '1px solid var(--border)' }}
             >
               <div className="flex items-center justify-between px-4 h-14 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Navegação</span>
+                <Image
+                  src="/images/central-play-logo.png"
+                  alt="Central Play Plus"
+                  width={400}
+                  height={200}
+                  className="h-9 w-auto"
+                />
                 <button
                   onClick={() => setOpen(false)}
                   aria-label="Fechar menu"
