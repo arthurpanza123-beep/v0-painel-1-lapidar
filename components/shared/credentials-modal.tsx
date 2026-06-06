@@ -13,6 +13,16 @@ import {
 import { buildProviderCredentials, type ProviderApp } from '@/lib/config/provider-catalog'
 import { useToast } from '@/components/ui/toast'
 
+// Quando as credenciais chegam mascaradas (bullets •), a URL M3U gerada vem
+// com os bullets url-encoded (%E2%80%A2). Limpamos para exibir de forma legivel.
+function cleanMaskedUrl(value?: string): string | undefined {
+  if (!value) return value
+  return value.replace(/%E2%80%A2/g, '•')
+}
+function isMasked(value?: string): boolean {
+  return !!value && value.includes('•')
+}
+
 // ——— Linha de credencial copiavel ———
 function CopyRow({
   label, value, mono = true, accent = '#94a3b8',
@@ -88,6 +98,7 @@ function AppCard({
       cred.host ? `Host: ${cred.host}` : '',
       cred.username ? `Usuario: ${cred.username}` : '',
       cred.password ? `Senha: ${cred.password}` : '',
+      cred.m3uUrl ? `M3U: ${cleanMaskedUrl(cred.m3uUrl)}` : '',
     ].filter(Boolean).join('\n')
     navigator.clipboard.writeText(linhas)
     addToast('success', `Credenciais ${cred.app} copiadas`)
@@ -143,8 +154,8 @@ function AppCard({
               {cred.host && <CopyRow label="Host" value={cred.host} accent="#f59e0b" />}
               <CopyRow label="Usuario" value={cred.username} accent="#14b8a6" />
               <CopyRow label="Senha" value={cred.password} accent="#14b8a6" />
-              {cred.m3uUrl && <CopyRow label="M3U" value={cred.m3uUrl} accent="#a78bfa" />}
-              {cred.hlsUrl && <CopyRow label="HLS" value={cred.hlsUrl} accent="#a78bfa" />}
+              {cred.m3uUrl && <CopyRow label="M3U" value={cleanMaskedUrl(cred.m3uUrl)} accent="#a78bfa" />}
+              {cred.hlsUrl && <CopyRow label="HLS" value={cleanMaskedUrl(cred.hlsUrl)} accent="#a78bfa" />}
               {cred.link && <CopyRow label="Download" value={cred.link} mono={false} accent="#94a3b8" />}
               {cred.downloader && <CopyRow label="Downloader" value={cred.downloader} accent="#94a3b8" />}
 
@@ -284,8 +295,13 @@ export function CredentialsModal({
                   <CopyRow label="Usuario" value={cliente.usuario} accent={accent} />
                   <CopyRow label="Senha" value={cliente.senha} accent={accent} />
                   {baseCred?.host && <CopyRow label="Host / DNS" value={baseCred.host} accent={accent} />}
-                  {baseCred?.m3uUrl && <CopyRow label="M3U / HLS" value={baseCred.m3uUrl} accent={accent} />}
+                  {baseCred?.m3uUrl && <CopyRow label="M3U / HLS" value={cleanMaskedUrl(baseCred.m3uUrl)} accent={accent} />}
                 </div>
+                {(isMasked(cliente.usuario) || isMasked(cliente.senha)) && (
+                  <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+                    Dados parcialmente ocultos por seguranca. Use "Abrir painel" para copiar a playlist completa do provedor.
+                  </p>
+                )}
               </div>
 
               {/* XCloud aviso */}
