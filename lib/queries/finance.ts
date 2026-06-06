@@ -1,4 +1,5 @@
 import { MOCK_CLIENTES, MOCK_CREDITOS, type CreditoPainel } from '@/lib/mock-data'
+import { isOperationalNoise } from '@/lib/services/operational-window'
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '@/lib/supabase/server'
 
 export type FinanceQueryResult = {
@@ -32,8 +33,8 @@ function monthlyEquivalent(plano: string | null | undefined, valor: number): num
   return valor / months
 }
 
-type ClientRow = { id: string; status: string | null }
-type RenewalRow = { plan_key: string | null; amount_cents: number | null; status: string | null; due_at: string | null }
+type ClientRow = { id: string; name: string | null; status: string | null }
+type RenewalRow = { client_id?: string | null; plan_key: string | null; amount_cents: number | null; status: string | null; due_at: string | null; created_at?: string | null }
 type PaymentRow = { amount_cents: number | null; status: string | null; paid_at: string | null }
 type TestRow = { status: string | null; created_at: string | null }
 type CreditRow = { id: string; panel_id: string; credits_available: number | null; estimated_activations: number | null; cost_per_activation_cents: number | null; status: string | null; checked_at: string | null }
@@ -53,13 +54,19 @@ function buildMockResult(): FinanceQueryResult {
     return acc
   }, {})
 
+  // Projeção: 30d = soma do valor dos clientes ativos (a receber);
+  // 60d/90d crescem de forma progressiva (cada período = anterior × 2 − 20% = × 1.6).
+  const previsao30d = receitaMesAtual
+  const previsao60d = previsao30d * 1.6
+  const previsao90d = previsao60d * 1.6
+
   return {
     data_source: 'mock',
     metrics: {
       receitaMesAtual,
-      receitaPrevista30d: receitaMesAtual,
-      receitaPrevista60d: receitaMesAtual * 2,
-      receitaPrevista90d: receitaMesAtual * 3,
+      receitaPrevista30d: previsao30d,
+      receitaPrevista60d: previsao60d,
+      receitaPrevista90d: previsao90d,
       renovacaoMensalPrevista,
       lucroEstimado: receitaMesAtual - MOCK_CREDITOS.reduce((acc, c) => acc + c.custoPorAtivacao * 5, 0),
       renovacoesPrevistas: clientesAtivos.length,
@@ -89,8 +96,8 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
     const in90 = new Date(now.getTime() + 90 * 86400000).toISOString()
 
     const [clientsRes, renewalsRes, paymentsRes, testsRes, creditsRes, panelsRes] = await Promise.all([
-      db.from('clients').select('id,status'),
-      db.from('renewals').select('plan_key,amount_cents,status,due_at').order('due_at', { ascending: true }),
+      db.from('clients').select('id,name,status'),
+      db.from('renewals').select('client_id,plan_key,amount_cents,status,due_at,created_at').order('due_at', { ascending: true }),
       db.from('payments').select('amount_cents,status,paid_at').gte('paid_at', monthStart),
       db.from('tests').select('status,created_at').gte('created_at', todayStart),
       db.from('panel_credit_snapshots').select('id,panel_id,credits_available,estimated_activations,cost_per_activation_cents,status,checked_at').order('checked_at', { ascending: false }),
@@ -104,7 +111,7 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
     if (creditsRes.error) throw new Error(creditsRes.error.message)
     if (panelsRes.error) throw new Error(panelsRes.error.message)
 
-    const clients = (clientsRes.data as ClientRow[] || [])
+    const clients = (clientsRes.data as ClientRow[] || []).filter((c) => !isOperationalNoise(c.name))
     const renewals = (renewalsRes.data as RenewalRow[] || [])
     const payments = (paymentsRes.data as PaymentRow[] || [])
     const tests = (testsRes.data as TestRow[] || [])
@@ -129,9 +136,21 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
 
     const paidPayments = payments.filter((p) => p.status === 'paid')
     const receitaMesAtual = paidPayments.reduce((acc, p) => acc + money(p.amount_cents), 0)
-    const forecast = (until: string) => renewals
-      .filter((r) => r.status !== 'paid' && r.status !== 'cancelled' && r.due_at && r.due_at <= until)
-      .reduce((acc, r) => acc + money(r.amount_cents), 0)
+
+    // "A receber" / próximos 30 dias = soma do valor dos clientes ativos reais.
+    // Usa a renovação mais recente de cada cliente ativo.
+    const activeClientIds = new Set(clients.filter((c) => c.status === 'active').map((c) => c.id))
+    const latestRenewalByClient = new Map<string, RenewalRow>()
+    for (const r of renewals) {
+      const cid = r.client_id || ''
+      if (!cid || !activeClientIds.has(cid)) continue
+      const cur = latestRenewalByClient.get(cid)
+      if (!cur || String(r.created_at || '') > String(cur.created_at || '')) latestRenewalByClient.set(cid, r)
+    }
+    const aReceber = Array.from(latestRenewalByClient.values()).reduce((acc, r) => acc + money(r.amount_cents), 0)
+    const previsao30d = aReceber
+    const previsao60d = previsao30d * 1.6
+    const previsao90d = previsao60d * 1.6
     const porPlanoMap = renewals.reduce<Record<string, number>>((acc, r) => {
       if (!r.amount_cents) return acc
       const plano = r.plan_key ? r.plan_key.charAt(0).toUpperCase() + r.plan_key.slice(1) : 'Sem plano'

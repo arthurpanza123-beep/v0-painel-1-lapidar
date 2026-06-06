@@ -8,8 +8,7 @@ import {
 } from 'lucide-react'
 import type { NavPage } from '@/app/page'
 import {
-  MOCK_TESTES, MOCK_CLIENTES, MOCK_PIPELINE, MOCK_CREDITOS, MOCK_RENOVACOES,
-  calcularMetricasFinanceiro, calcularMetricasPipeline,
+  MOCK_TESTES, MOCK_CLIENTES, MOCK_PIPELINE, MOCK_CREDITOS,
 } from '@/lib/mock-data'
 import type { DashboardMetrics } from '@/lib/supabase/types'
 
@@ -46,15 +45,14 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
   }, [])
 
   const dashboardMetrics = remoteMetrics ?? metrics
-  const fin  = calcularMetricasFinanceiro()
-  const pipe = calcularMetricasPipeline()
 
-  // Métricas principais ajustadas
-  const hoje = new Date().toLocaleDateString('pt-BR')
-  const leadsHojeMock = MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
-  const leadsHoje = dashboardMetrics?.leads_today ?? leadsHojeMock
-  const testesHoje = dashboardMetrics?.total_tests ?? MOCK_TESTES.length
-  const ativacoesHoje = dashboardMetrics?.activations_today ?? MOCK_PIPELINE.filter(l => l.etapa === 'ativado').length
+  // Métricas principais — alinhadas ao site no ar
+  // Testes ativos = testes válidos agora; Gerados hoje = criados hoje;
+  // Operação hoje = total de movimentações reais do dia (leads + testes + pagamentos).
+  const testesAtivos = dashboardMetrics?.active_tests ?? MOCK_TESTES.filter(t => t.status === 'ativo').length
+  const geradosHoje = dashboardMetrics?.total_tests ?? MOCK_TESTES.length
+  const operacaoHoje = dashboardMetrics?.leads_in_progress ?? MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
+  const leadsHoje = dashboardMetrics?.leads_today ?? MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead').length
   const clientesAtivos = dashboardMetrics?.active_clients ?? MOCK_CLIENTES.filter(c => c.status === 'ativo').length
 
   // Receita prevista 30 dias - soma dos vencimentos próximos 30 dias
@@ -72,22 +70,21 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
     ? dashboardMetrics.panel_credits.map(c => ({ id: c.id, painel: c.panel, creditos: Math.floor(c.balance / 8), alertaBaixo: c.low_balance }))
     : MOCK_CREDITOS.map(c => ({ id: c.id, painel: c.painel, creditos: c.ativacoesRestantes, alertaBaixo: c.alertaBaixo }))
 
-  // Funil do dia - simplificado
-  const vencemHoje = MOCK_RENOVACOES.filter(r => r.diasRestantes === 0).length
-  const problemasAbertos = dashboardMetrics?.open_problems ?? 2
-
-  const funil = [
-    { label: 'Leads',        value: leadsHoje,       color: '#3b82f6' },
-    { label: 'Testes',       value: testesHoje,      color: '#f59e0b' },
-    { label: 'Ativaram',     value: ativacoesHoje,   color: '#22c55e' },
-    { label: 'Vencem hoje',  value: vencemHoje,      color: '#f97316' },
-    { label: 'Problemas',    value: problemasAbertos, color: '#ef4444' },
-  ]
+  // Funil do dia - "Hoje na operação". Usa o funil real quando disponível.
+  const funil = dashboardMetrics?.funnel?.length
+    ? dashboardMetrics.funnel.map(f => ({ label: f.label, value: f.count, color: f.color }))
+    : [
+        { label: 'Lead',     value: leadsHoje, color: '#3b82f6' },
+        { label: 'Testando', value: MOCK_PIPELINE.filter(l => l.etapa === 'teste_gerado' || l.etapa === 'testando').length, color: '#f59e0b' },
+        { label: 'Finalizou', value: 0, color: '#eab308' },
+        { label: 'Pagou',    value: MOCK_PIPELINE.filter(l => l.etapa === 'pagou').length, color: '#22c55e' },
+        { label: 'Ativos',   value: clientesAtivos, color: '#14b8a6' },
+      ]
 
   const kpis = [
-    { label: 'Leads hoje',       value: leadsHoje,       icon: UserPlus,  color: '#3b82f6', page: 'pipeline' as NavPage },
-    { label: 'Testes hoje',      value: testesHoje,      icon: TestTube2, color: '#f59e0b', page: 'testes'   as NavPage },
-    { label: 'Ativações hoje',   value: ativacoesHoje,   icon: Zap,       color: '#22c55e', page: 'contas'   as NavPage },
+    { label: 'Testes ativos',    value: testesAtivos,    icon: TestTube2, color: '#f59e0b', page: 'testes'   as NavPage },
+    { label: 'Gerados hoje',     value: geradosHoje,     icon: Zap,       color: '#3b82f6', page: 'testes'   as NavPage },
+    { label: 'Operação hoje',    value: operacaoHoje,    icon: UserPlus,  color: '#22c55e', page: 'pipeline' as NavPage },
     { label: 'Clientes ativos',  value: clientesAtivos,  icon: Users,     color: '#a78bfa', page: 'clientes' as NavPage },
   ]
 

@@ -47,13 +47,19 @@ function buildFallbackFinance(): FinanceData {
     return acc
   }, {})
 
+  // 30d = soma do valor dos clientes ativos (a receber); 60d/90d progressivo
+  // (cada período = anterior × 2 - 20% = × 1.6)
+  const previsao30d = receitaMesAtual
+  const previsao60d = previsao30d * 1.6
+  const previsao90d = previsao60d * 1.6
+
   return {
     data_source: 'mock',
     metrics: {
       receitaMesAtual,
-      receitaPrevista30d: receitaMesAtual,
-      receitaPrevista60d: receitaMesAtual * 2,
-      receitaPrevista90d: receitaMesAtual * 3,
+      receitaPrevista30d: previsao30d,
+      receitaPrevista60d: previsao60d,
+      receitaPrevista90d: previsao90d,
       renovacaoMensalPrevista,
       lucroEstimado: receitaMesAtual - MOCK_CREDITOS.reduce((acc, c) => acc + (c.custoPorAtivacao * 5), 0),
       renovacoesPrevistas: clientesAtivos.length,
@@ -310,9 +316,12 @@ export function FinanceiroPage() {
           </div>
           <div className="space-y-4">
             <Bar label="Próx. 30 dias" value={fin.receitaPrevista30d} max={maxProjecao} color="#60a5fa" />
-            <Bar label="Próx. 60 dias" value={fin.receitaPrevista60d} max={maxProjecao} color="#818cf8" />
-            <Bar label="Próx. 90 dias" value={fin.receitaPrevista90d} max={maxProjecao} color="#a78bfa" />
+            <Bar label="Proj. 60 dias" value={fin.receitaPrevista60d} max={maxProjecao} color="#818cf8" />
+            <Bar label="Proj. 90 dias" value={fin.receitaPrevista90d} max={maxProjecao} color="#a78bfa" />
           </div>
+          <p className="text-[10px] text-slate-600 mt-3">
+            30 dias = renovação mensal dos clientes ativos. 60 e 90 dias são projeções de crescimento (dobro −20% a cada período).
+          </p>
         </div>
       </div>
 

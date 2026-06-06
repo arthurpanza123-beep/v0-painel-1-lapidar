@@ -1,6 +1,7 @@
 import { MOCK_PIPELINE, type EtapaPipeline, type LeadPipeline } from '@/lib/mock-data'
 import { formatDateTimeBR } from '@/lib/services/date-normalizer'
 import { maskPhone, maskSensitiveText } from '@/lib/services/masking'
+import { isOperationalNoise } from '@/lib/services/operational-window'
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '@/lib/supabase/server'
 
 export type PipelineQueryResult = {
@@ -64,7 +65,11 @@ export async function getPipelineData(): Promise<PipelineQueryResult> {
     const appsById = new Map((appsRes.data as AppRow[] || []).map((row) => [row.id, row]))
     const panelsById = new Map((panelsRes.data as PanelRow[] || []).map((row) => [row.id, row]))
 
-    const items: LeadPipeline[] = (clientsRes.data as ClientRow[] || []).map((client) => {
+    const realClients = (clientsRes.data as ClientRow[] || []).filter(
+      (client) => !isOperationalNoise(client.name) && !isOperationalNoise(client.notes)
+    )
+
+    const items: LeadPipeline[] = realClients.map((client) => {
       const test = latestTestByClient.get(client.id)
       const renewal = latestRenewalByClient.get(client.id)
       const app = test?.app_id ? appsById.get(test.app_id) : undefined

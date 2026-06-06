@@ -19,6 +19,7 @@
  */
 
 import type { DashboardMetrics } from '@/lib/supabase/types'
+import { operationWindows, isOperationalNoise } from '@/lib/services/operational-window'
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '@/lib/supabase/server'
 import {
   MOCK_TESTES,
@@ -87,44 +88,45 @@ function getCount(result: CountResult) {
   return result.count || 0
 }
 
+type ClientRow = { id: string; name: string | null; status: string | null; created_at: string | null }
+type TestRow = { id: string; client_id: string | null; status: string | null; created_at: string | null; expires_at: string | null }
+
 async function getDashboardFromSupabase(): Promise<DashboardMetrics | null> {
   const db = getSupabaseServerClient()
   if (!db) return null
 
   try {
     const now = new Date()
+    const nowIso = now.toISOString()
+    const { todayStartIso, in30dIso, in60dIso, in90dIso } = operationWindows(now)
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-    const in30d = new Date(now.getTime() + 30 * 86400000).toISOString()
-    const in60d = new Date(now.getTime() + 60 * 86400000).toISOString()
-    const in90d = new Date(now.getTime() + 90 * 86400000).toISOString()
 
     const [
-      totalTestsRes,
+      clientsRes,
+      testsTodayRes,
       activeTestsRes,
       activeClientsRes,
-      leadsRes,
-      testingRes,
-      interestedRes,
-      paidPipelineRes,
-      activatedPipelineRes,
+      paidTodayRes,
       revenueMonthRes,
+      renewalsRes,
       forecast30Res,
       forecast60Res,
       forecast90Res,
       creditsRes,
     ] = await Promise.all([
-      db.from('tests').select('id', { count: 'exact', head: true }),
-      db.from('tests').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      // clientes (com nome p/ filtrar ruído de QA)
+      db.from('clients').select('id,name,status,created_at'),
+      // testes gerados hoje (com nome do cliente p/ filtrar ruído)
+      db.from('tests').select('id,client_id,status,created_at,expires_at').gte('created_at', todayStartIso),
+      // testes ativos agora (válidos)
+      db.from('tests').select('id,client_id,status,created_at,expires_at').eq('status', 'active').gt('expires_at', nowIso),
       db.from('clients').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-      db.from('clients').select('id', { count: 'exact', head: true }).in('status', ['lead', 'test_active']),
-      db.from('tests').select('id', { count: 'exact', head: true }).in('status', ['pending', 'generating', 'active']),
-      db.from('renewals').select('id', { count: 'exact', head: true }).eq('status', 'pending_payment'),
-      db.from('payments').select('id', { count: 'exact', head: true }).eq('status', 'paid').gte('paid_at', monthStart),
-      db.from('clients').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      db.from('payments').select('id', { count: 'exact', head: true }).eq('status', 'paid').gte('paid_at', todayStartIso),
       db.from('payments').select('amount_cents').eq('status', 'paid').gte('paid_at', monthStart),
-      db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', now.toISOString()).lte('due_at', in30d),
-      db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', now.toISOString()).lte('due_at', in60d),
-      db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', now.toISOString()).lte('due_at', in90d),
+      db.from('renewals').select('client_id,plan_key,amount_cents,created_at'),
+      db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', nowIso).lte('due_at', in30dIso),
+      db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', nowIso).lte('due_at', in60dIso),
+      db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', nowIso).lte('due_at', in90dIso),
       db
         .from('panel_credit_snapshots')
         .select('id, credits_available, estimated_activations, status, checked_at, panels(name)')
@@ -132,28 +134,60 @@ async function getDashboardFromSupabase(): Promise<DashboardMetrics | null> {
         .limit(12),
     ])
 
-    const totalTests = getCount(totalTestsRes)
-    const activeTests = getCount(activeTestsRes)
-    const activeClients = getCount(activeClientsRes)
-    const leads = getCount(leadsRes)
-    const testing = getCount(testingRes)
-    const interested = getCount(interestedRes)
-    const paidPipeline = getCount(paidPipelineRes)
-    const activated = getCount(activatedPipelineRes)
-
-    if (revenueMonthRes.error || forecast30Res.error || forecast60Res.error || forecast90Res.error || creditsRes.error) {
-      throw new Error(
-        revenueMonthRes.error?.message ||
-        forecast30Res.error?.message ||
-        forecast60Res.error?.message ||
-        forecast90Res.error?.message ||
-        creditsRes.error?.message ||
-        'Falha ao consultar métricas'
-      )
+    if (
+      clientsRes.error || testsTodayRes.error || activeTestsRes.error ||
+      revenueMonthRes.error || renewalsRes.error ||
+      forecast30Res.error || forecast60Res.error || forecast90Res.error || creditsRes.error
+    ) {
+      throw new Error('Falha ao consultar métricas do dashboard')
     }
+
+    const activeClients = getCount(activeClientsRes)
+    const paidToday = getCount(paidTodayRes)
+
+    // Mapa de clientes p/ filtrar ruído de QA (nomes sintéticos)
+    const clients = (clientsRes.data || []) as ClientRow[]
+    const clientById = new Map(clients.map((c) => [c.id, c]))
+    const isRealTest = (test: TestRow) => {
+      const client = test.client_id ? clientById.get(test.client_id) : undefined
+      return !isOperationalNoise(client?.name)
+    }
+
+    // Gerados hoje (sem ruído)
+    const generatedToday = ((testsTodayRes.data || []) as TestRow[]).filter(isRealTest)
+    const generatedTodayCount = generatedToday.length
+
+    // Testes ativos agora (sem ruído)
+    const activeTestsCount = ((activeTestsRes.data || []) as TestRow[]).filter(isRealTest).length
+
+    // Funil do dia (todos derivados dos testes reais de hoje)
+    const testingToday = generatedToday.filter((t) => ['pending', 'generating', 'active'].includes(String(t.status))).length
+    const finishedToday = generatedToday.filter((t) => ['expired', 'failed', 'cancelled', 'archived', 'converted'].includes(String(t.status))).length
+
+    // Leads reais criados hoje (status lead, sem ruído)
+    const leadsToday = clients.filter(
+      (c) => c.status === 'lead' && String(c.created_at || '') >= todayStartIso && !isOperationalNoise(c.name)
+    ).length
+
+    const totalOperacaoHoje = leadsToday + generatedTodayCount + paidToday
 
     const sumCents = (rows: { amount_cents: number | null }[] | null) =>
       (rows || []).reduce((acc, row) => acc + (row.amount_cents || 0), 0) / 100
+
+    // Renovação mensal prevista (clientes ativos reais, plano mensal)
+    const renewals = (renewalsRes.data || []) as { client_id: string | null; plan_key: string | null; amount_cents: number | null; created_at: string | null }[]
+    const latestRenewal = new Map<string, typeof renewals[number]>()
+    for (const r of renewals) {
+      if (!r.client_id) continue
+      const cur = latestRenewal.get(r.client_id)
+      if (!cur || String(r.created_at || '') > String(cur.created_at || '')) latestRenewal.set(r.client_id, r)
+    }
+    const monthlyRenewalForecast = clients.reduce((total, c) => {
+      if (c.status !== 'active' || isOperationalNoise(c.name)) return total
+      const r = latestRenewal.get(c.id)
+      if (String(r?.plan_key || '').toLowerCase() !== 'mensal') return total
+      return total + (r?.amount_cents || 0) / 100
+    }, 0)
 
     const rawCredits = creditsRes.data || []
     const seenPanels = new Set<string>()
@@ -176,25 +210,33 @@ async function getDashboardFromSupabase(): Promise<DashboardMetrics | null> {
 
     const availableCredits = panelCredits.reduce((acc, row) => acc + row.balance, 0)
 
+    // Projeções: 30d = renovação mensal; 60d/90d progressivo (× 1.6)
+    const due30 = sumCents(forecast30Res.data)
+    const forecast30 = monthlyRenewalForecast || due30
+    const forecast60 = forecast30 * 1.6
+    const forecast90 = forecast60 * 1.6
+
     return {
-      active_tests: activeTests,
-      total_tests: totalTests,
+      active_tests: activeTestsCount,
+      total_tests: generatedTodayCount,
       active_clients: activeClients,
-      leads_in_progress: leads + testing + interested,
-      leads_today: leads,
-      activations_today: activated,
+      leads_in_progress: totalOperacaoHoje,
+      leads_today: leadsToday,
+      activations_today: paidToday,
       open_problems: 0,
       available_credits: availableCredits,
       revenue_current_month: sumCents(revenueMonthRes.data),
-      revenue_forecast_30d: sumCents(forecast30Res.data),
-      revenue_forecast_60d: sumCents(forecast60Res.data),
-      revenue_forecast_90d: sumCents(forecast90Res.data),
+      monthly_renewal_forecast: monthlyRenewalForecast,
+      revenue_due_30d: due30,
+      revenue_forecast_30d: forecast30,
+      revenue_forecast_60d: forecast60,
+      revenue_forecast_90d: forecast90,
       funnel: [
-        { stage: 'novo_lead', label: 'Leads', count: leads, color: '#3b82f6' },
-        { stage: 'testando', label: 'Testando', count: testing, color: '#f59e0b' },
-        { stage: 'interessado', label: 'Interesse', count: interested, color: '#a78bfa' },
-        { stage: 'pagou', label: 'Pagaram', count: paidPipeline, color: '#22c55e' },
-        { stage: 'ativado', label: 'Ativados', count: activated, color: '#14b8a6' },
+        { stage: 'novo_lead', label: 'Lead', count: leadsToday, color: '#3b82f6' },
+        { stage: 'teste_gerado', label: 'Testando', count: testingToday, color: '#f59e0b' },
+        { stage: 'testando', label: 'Finalizou', count: finishedToday, color: '#eab308' },
+        { stage: 'pagou', label: 'Pagou', count: paidToday, color: '#22c55e' },
+        { stage: 'ativado', label: 'Ativos', count: activeClients, color: '#14b8a6' },
       ],
       panel_credits: panelCredits,
       data_source: 'supabase',
