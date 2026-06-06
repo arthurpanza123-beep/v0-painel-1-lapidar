@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import type { NavPage } from '@/app/page'
 import {
   Headphones, TestTube2, Users, Wallet, RefreshCw, DollarSign,
-  AlertTriangle, Settings, Terminal, LogOut, Kanban, LayoutDashboard,
+  AlertTriangle, Sparkles, Terminal, LogOut, Kanban, LayoutDashboard,
   Zap, MoreVertical, X,
 } from 'lucide-react'
 
@@ -21,7 +21,7 @@ const NAV_ITEMS: { id: NavPage; label: string; Icon: React.FC<{ className?: stri
   { id: 'renovacoes',      label: 'Renovacoes',      Icon: ({ className }) => <RefreshCw className={className} /> },
   { id: 'financeiro',      label: 'Financeiro',      Icon: ({ className }) => <DollarSign className={className} /> },
   { id: 'problemas',       label: 'Problemas',       Icon: ({ className }) => <AlertTriangle className={className} /> },
-  { id: 'configuracoes',   label: 'Configuracoes',   Icon: ({ className }) => <Settings className={className} /> },
+  { id: 'codex',           label: 'Codex',           Icon: ({ className }) => <Sparkles className={className} /> },
   { id: 'debug',           label: 'Logs',            Icon: ({ className }) => <Terminal className={className} /> },
 ]
 

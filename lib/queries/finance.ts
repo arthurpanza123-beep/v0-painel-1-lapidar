@@ -91,9 +91,6 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
     const now = new Date()
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
-    const in30 = new Date(now.getTime() + 30 * 86400000).toISOString()
-    const in60 = new Date(now.getTime() + 60 * 86400000).toISOString()
-    const in90 = new Date(now.getTime() + 90 * 86400000).toISOString()
 
     const [clientsRes, renewalsRes, paymentsRes, testsRes, creditsRes, panelsRes] = await Promise.all([
       db.from('clients').select('id,name,status'),
@@ -171,9 +168,9 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
       data_source: 'supabase',
       metrics: {
         receitaMesAtual,
-        receitaPrevista30d: forecast(in30),
-        receitaPrevista60d: forecast(in60),
-        receitaPrevista90d: forecast(in90),
+        receitaPrevista30d: previsao30d,
+        receitaPrevista60d: previsao60d,
+        receitaPrevista90d: previsao90d,
         renovacaoMensalPrevista,
         lucroEstimado: receitaMesAtual - custoEstimado,
         renovacoesPrevistas: renewals.filter((r) => r.status !== 'paid' && r.status !== 'cancelled').length,
