@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   DollarSign, TrendingUp, CreditCard, AlertTriangle,
-  ArrowUpRight, Wallet, Target, Layers
+  ArrowUpRight, Wallet, Target, Layers, Info
 } from 'lucide-react'
 import {
   MOCK_CREDITOS, MOCK_CLIENTES,
@@ -18,6 +18,7 @@ type FinanceData = {
     receitaPrevista30d: number
     receitaPrevista60d: number
     receitaPrevista90d: number
+    renovacaoMensalPrevista: number
     lucroEstimado: number
     renovacoesPrevistas: number
     creditosDisponiveis: number
@@ -31,21 +32,35 @@ type FinanceData = {
   creditos: CreditoPainel[]
 }
 
+const PLAN_MONTHS: Record<string, number> = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 }
+function monthlyEquivalent(plano: string, valor: number): number {
+  const months = PLAN_MONTHS[String(plano || '').toLowerCase().trim()] || 1
+  return valor / months
+}
+
 function buildFallbackFinance(): FinanceData {
   const clientesAtivos = MOCK_CLIENTES.filter(c => c.status === 'ativo')
   const receitaMesAtual = clientesAtivos.reduce((acc, c) => acc + c.valor, 0)
+  const renovacaoMensalPrevista = clientesAtivos.reduce((acc, c) => acc + monthlyEquivalent(c.plano, c.valor), 0)
   const porPlanoMap = clientesAtivos.reduce<Record<string, number>>((acc, c) => {
     acc[c.plano] = (acc[c.plano] || 0) + c.valor
     return acc
   }, {})
 
+  // 30d = soma do valor dos clientes ativos (a receber); 60d/90d progressivo
+  // (cada período = anterior × 2 - 20% = × 1.6)
+  const previsao30d = receitaMesAtual
+  const previsao60d = previsao30d * 1.6
+  const previsao90d = previsao60d * 1.6
+
   return {
     data_source: 'mock',
     metrics: {
       receitaMesAtual,
-      receitaPrevista30d: receitaMesAtual,
-      receitaPrevista60d: receitaMesAtual * 2,
-      receitaPrevista90d: receitaMesAtual * 3,
+      receitaPrevista30d: previsao30d,
+      receitaPrevista60d: previsao60d,
+      receitaPrevista90d: previsao90d,
+      renovacaoMensalPrevista,
       lucroEstimado: receitaMesAtual - MOCK_CREDITOS.reduce((acc, c) => acc + (c.custoPorAtivacao * 5), 0),
       renovacoesPrevistas: clientesAtivos.length,
       creditosDisponiveis: MOCK_CREDITOS.reduce((acc, c) => acc + c.saldo, 0),
@@ -219,11 +234,22 @@ export function FinanceiroPage() {
       </motion.div>
 
       {/* KPIs grandes */}
-      <div className="w-full max-w-4xl grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        <BigKPI label="Receita atual" value={`R$ ${fin.receitaMesAtual.toFixed(0)}`} color="#22c55e" sub="+12% este mês" icon={DollarSign} />
-        <BigKPI label="Prevista (30d)" value={`R$ ${fin.receitaPrevista30d.toFixed(0)}`} color="#60a5fa" sub="próximos 30 dias" icon={TrendingUp} />
+      <div className="w-full max-w-4xl grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+        <BigKPI label="Renovação mensal prevista" value={`R$ ${fin.renovacaoMensalPrevista.toFixed(0)}`} color="#22c55e" sub="MRR dos ativos" icon={DollarSign} />
+        <BigKPI label="Próximos 30 dias" value={`R$ ${fin.receitaPrevista30d.toFixed(0)}`} color="#60a5fa" sub="por vencimento" icon={TrendingUp} />
         <BigKPI label="Lucro estimado" value={`R$ ${fin.lucroEstimado.toFixed(0)}`} color="#a78bfa" icon={Target} />
         <BigKPI label="Ticket médio" value={`R$ ${fin.ticketMedio.toFixed(0)}`} color="#f59e0b" icon={Wallet} />
+      </div>
+
+      {/* Explicacao MRR vs proximos 30 dias */}
+      <div className="w-full max-w-4xl mb-8">
+        <div className="rounded-xl px-4 py-3 flex items-start gap-2.5" style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.15)' }}>
+          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" style={{ color: '#4ade80' }} />
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            <span className="text-emerald-300 font-medium">Renovação mensal prevista</span> soma os clientes mensais ativos (planos longos normalizados por mês), igual à regra operacional do bot.
+            Já <span className="text-blue-300 font-medium">Próximos 30 dias</span> mostra apenas o que vence por data nos próximos 30 dias. São números diferentes e não devem ser confundidos.
+          </p>
+        </div>
       </div>
 
       {/* Receita por plano + Conversões */}
@@ -278,13 +304,24 @@ export function FinanceiroPage() {
         <div className="rounded-2xl p-6" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
           <div className="flex items-center gap-2 mb-5">
             <TrendingUp className="h-4 w-4" style={{ color: '#60a5fa' }} />
-            <h2 className="text-sm font-semibold text-white">Projeção de receita</h2>
+            <h2 className="text-sm font-semibold text-white">Projeção por vencimento</h2>
+          </div>
+          {/* Linha de referencia: MRR */}
+          <div className="flex items-center justify-between rounded-xl px-4 py-3 mb-4" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.18)' }}>
+            <div>
+              <p className="text-xs text-slate-300">Renovação mensal prevista</p>
+              <p className="text-[10px] text-slate-500">MRR recorrente dos clientes ativos</p>
+            </div>
+            <p className="text-lg font-bold" style={{ color: '#4ade80', fontFamily: 'var(--font-display)' }}>R$ {fin.renovacaoMensalPrevista.toFixed(0)}</p>
           </div>
           <div className="space-y-4">
-            <Bar label="30 dias" value={fin.receitaPrevista30d} max={maxProjecao} color="#22c55e" />
-            <Bar label="60 dias" value={fin.receitaPrevista60d} max={maxProjecao} color="#60a5fa" />
-            <Bar label="90 dias" value={fin.receitaPrevista90d} max={maxProjecao} color="#a78bfa" />
+            <Bar label="Próx. 30 dias" value={fin.receitaPrevista30d} max={maxProjecao} color="#60a5fa" />
+            <Bar label="Proj. 60 dias" value={fin.receitaPrevista60d} max={maxProjecao} color="#818cf8" />
+            <Bar label="Proj. 90 dias" value={fin.receitaPrevista90d} max={maxProjecao} color="#a78bfa" />
           </div>
+          <p className="text-[10px] text-slate-600 mt-3">
+            30 dias = renovação mensal dos clientes ativos. 60 e 90 dias são projeções de crescimento (dobro −20% a cada período).
+          </p>
         </div>
       </div>
 

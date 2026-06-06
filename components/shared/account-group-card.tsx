@@ -19,7 +19,8 @@ export function AccountGroupCard({
   const ocupadas = conta.clientesVinculados.length
   const livres = conta.vagasTotal - ocupadas
   const cheia = livres <= 0
-  const cor = cheia ? '#f59e0b' : '#22c55e'
+  // Conta cheia = vermelho; com vaga livre = verde.
+  const cor = cheia ? '#ef4444' : '#22c55e'
 
   const vagas = Array.from({ length: conta.vagasTotal }, (_, i) => conta.clientesVinculados[i] ?? null)
 

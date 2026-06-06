@@ -206,9 +206,9 @@ export interface PipelineLead {
 export interface DashboardMetrics {
   /** KPIs principais */
   active_tests: number
-  total_tests: number
+  total_tests: number           // gerados hoje
   active_clients: number
-  leads_in_progress: number
+  leads_in_progress: number     // total hoje na operação
   leads_today: number
   activations_today: number
   open_problems: number
@@ -216,6 +216,8 @@ export interface DashboardMetrics {
   /** Financeiro */
   available_credits: number
   revenue_current_month: number
+  monthly_renewal_forecast?: number
+  revenue_due_30d?: number
   revenue_forecast_30d: number
   revenue_forecast_60d: number
   revenue_forecast_90d: number

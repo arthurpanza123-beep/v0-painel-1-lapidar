@@ -8,8 +8,7 @@ import {
 } from 'lucide-react'
 import type { NavPage } from '@/app/page'
 import {
-  MOCK_TESTES, MOCK_CLIENTES, MOCK_PIPELINE, MOCK_CREDITOS, MOCK_RENOVACOES,
-  calcularMetricasFinanceiro, calcularMetricasPipeline,
+  MOCK_TESTES, MOCK_CLIENTES, MOCK_PIPELINE, MOCK_CREDITOS,
 } from '@/lib/mock-data'
 import type { DashboardMetrics } from '@/lib/supabase/types'
 
@@ -21,6 +20,7 @@ interface DashboardPageProps {
 export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
   const [remoteMetrics, setRemoteMetrics] = useState<DashboardMetrics | undefined>(metrics)
   const [showProjecaoTooltip, setShowProjecaoTooltip] = useState(false)
+  const [renovacaoMensal, setRenovacaoMensal] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -30,50 +30,61 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
         if (!cancelled && data) setRemoteMetrics(data)
       })
       .catch(() => undefined)
+    // Renovacao mensal prevista (MRR) vem do financeiro
+    fetch('/api/finance')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.metrics?.renovacaoMensalPrevista != null) {
+          setRenovacaoMensal(data.metrics.renovacaoMensalPrevista)
+        }
+      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
   }, [])
 
   const dashboardMetrics = remoteMetrics ?? metrics
-  const fin  = calcularMetricasFinanceiro()
-  const pipe = calcularMetricasPipeline()
 
-  // Métricas principais ajustadas
-  const hoje = new Date().toLocaleDateString('pt-BR')
-  const leadsHojeMock = MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
-  const leadsHoje = dashboardMetrics?.leads_today ?? leadsHojeMock
-  const testesHoje = dashboardMetrics?.total_tests ?? MOCK_TESTES.length
-  const ativacoesHoje = dashboardMetrics?.activations_today ?? MOCK_PIPELINE.filter(l => l.etapa === 'ativado').length
+  // Métricas principais — alinhadas ao site no ar
+  // Testes ativos = testes válidos agora; Gerados hoje = criados hoje;
+  // Operação hoje = total de movimentações reais do dia (leads + testes + pagamentos).
+  const testesAtivos = dashboardMetrics?.active_tests ?? MOCK_TESTES.filter(t => t.status === 'ativo').length
+  const geradosHoje = dashboardMetrics?.total_tests ?? MOCK_TESTES.length
+  const operacaoHoje = dashboardMetrics?.leads_in_progress ?? MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
+  const leadsHoje = dashboardMetrics?.leads_today ?? MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead').length
   const clientesAtivos = dashboardMetrics?.active_clients ?? MOCK_CLIENTES.filter(c => c.status === 'ativo').length
 
   // Receita prevista 30 dias - soma dos vencimentos próximos 30 dias
   const clientesComValor = MOCK_CLIENTES.filter(c => c.status === 'ativo' && c.valor > 0)
   const clientesSemValor = MOCK_CLIENTES.filter(c => c.status === 'ativo' && (!c.valor || c.valor <= 0)).length
   const receitaPrevista = dashboardMetrics?.revenue_forecast_30d ?? clientesComValor.reduce((acc, c) => acc + c.valor, 0)
-  const projecaoComPerda = receitaPrevista * 0.7 // 30% de perda estimada
+
+  // Renovacao mensal prevista (MRR) - normaliza planos longos por mes (regra do bot)
+  const planMonths: Record<string, number> = { mensal: 1, trimestral: 3, semestral: 6, anual: 12 }
+  const mrrMock = clientesComValor.reduce((acc, c) => acc + c.valor / (planMonths[String(c.plano).toLowerCase().trim()] || 1), 0)
+  const renovacaoMensalPrevista = renovacaoMensal ?? mrrMock
 
   // Créditos como telas/ativações, não R$
   const painelCreditos = dashboardMetrics?.panel_credits
     ? dashboardMetrics.panel_credits.map(c => ({ id: c.id, painel: c.panel, creditos: Math.floor(c.balance / 8), alertaBaixo: c.low_balance }))
     : MOCK_CREDITOS.map(c => ({ id: c.id, painel: c.painel, creditos: c.ativacoesRestantes, alertaBaixo: c.alertaBaixo }))
 
-  // Funil do dia - simplificado
-  const vencemHoje = MOCK_RENOVACOES.filter(r => r.diasRestantes === 0).length
-  const problemasAbertos = dashboardMetrics?.open_problems ?? 2
-
-  const funil = [
-    { label: 'Leads',        value: leadsHoje,       color: '#3b82f6' },
-    { label: 'Testes',       value: testesHoje,      color: '#f59e0b' },
-    { label: 'Ativaram',     value: ativacoesHoje,   color: '#22c55e' },
-    { label: 'Vencem hoje',  value: vencemHoje,      color: '#f97316' },
-    { label: 'Problemas',    value: problemasAbertos, color: '#ef4444' },
-  ]
+  // Funil do dia - "Hoje na operação". Usa o funil real quando disponível.
+  const funil = dashboardMetrics?.funnel?.length
+    ? dashboardMetrics.funnel.map(f => ({ label: f.label, value: f.count, color: f.color }))
+    : [
+        { label: 'Lead',     value: leadsHoje, color: '#3b82f6' },
+        { label: 'Testando', value: MOCK_PIPELINE.filter(l => l.etapa === 'teste_gerado' || l.etapa === 'testando').length, color: '#f59e0b' },
+        { label: 'Finalizou', value: 0, color: '#eab308' },
+        { label: 'Pagou',    value: MOCK_PIPELINE.filter(l => l.etapa === 'pagou').length, color: '#22c55e' },
+        { label: 'Ativos',   value: clientesAtivos, color: '#14b8a6' },
+      ]
 
   const kpis = [
-    { label: 'Leads hoje',       value: leadsHoje,       icon: UserPlus,  color: '#3b82f6', page: 'pipeline' as NavPage },
-    { label: 'Testes hoje',      value: testesHoje,      icon: TestTube2, color: '#f59e0b', page: 'testes'   as NavPage },
-    { label: 'Ativações hoje',   value: ativacoesHoje,   icon: Zap,       color: '#22c55e', page: 'contas'   as NavPage },
+    { label: 'Testes ativos',    value: testesAtivos,    icon: TestTube2, color: '#f59e0b', page: 'testes'   as NavPage },
+    { label: 'Gerados hoje',     value: geradosHoje,     icon: Zap,       color: '#3b82f6', page: 'testes'   as NavPage },
+    { label: 'Operação hoje',    value: operacaoHoje,    icon: UserPlus,  color: '#22c55e', page: 'pipeline' as NavPage },
     { label: 'Clientes ativos',  value: clientesAtivos,  icon: Users,     color: '#a78bfa', page: 'clientes' as NavPage },
   ]
 
@@ -138,10 +149,10 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
             />
             <div className="relative flex items-start justify-between mb-5">
               <div>
-                <p className="text-xs text-slate-500 mb-1">Receita prevista (30 dias)</p>
+                <p className="text-xs text-slate-500 mb-1">Renovação mensal prevista</p>
                 <div className="flex items-center gap-2">
                   <p className="text-4xl font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>
-                    R$ {receitaPrevista.toFixed(0)}
+                    R$ {renovacaoMensalPrevista.toFixed(0)}
                   </p>
                   <button
                     onClick={() => setShowProjecaoTooltip(!showProjecaoTooltip)}
@@ -152,13 +163,13 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
                     <Info className="h-4 w-4 text-slate-500 hover:text-slate-300 transition-colors" />
                     {showProjecaoTooltip && (
                       <div
-                        className="absolute left-6 top-0 z-50 w-64 p-3 rounded-xl text-left"
+                        className="absolute left-6 top-0 z-50 w-72 p-3 rounded-xl text-left"
                         style={{ background: '#1e2230', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}
                       >
                         <p className="text-xs text-slate-300 mb-2">Como calculamos:</p>
                         <div className="space-y-1.5 text-[11px] text-slate-400">
-                          <p>Previsto: R$ {receitaPrevista.toFixed(0)}</p>
-                          <p>Estimativa com perda de 30%: R$ {projecaoComPerda.toFixed(0)}</p>
+                          <p>Renovação mensal prevista soma clientes mensais ativos (planos longos normalizados por mês), igual à regra operacional do bot.</p>
+                          <p className="text-slate-300 pt-1">Próximos 30 dias por vencimento: R$ {receitaPrevista.toFixed(0)}</p>
                           {clientesSemValor > 0 && (
                             <p className="flex items-center gap-1 text-amber-400">
                               <AlertTriangle className="h-3 w-3" />
@@ -170,9 +181,9 @@ export function DashboardPage({ onNavigate, metrics }: DashboardPageProps) {
                     )}
                   </button>
                 </div>
-                <p className="text-xs flex items-center gap-1 mt-1.5" style={{ color: '#22c55e' }}>
+                <p className="text-xs flex items-center gap-1 mt-1.5" style={{ color: '#60a5fa' }}>
                   <ArrowUpRight className="h-3.5 w-3.5" />
-                  Projeção: R$ {projecaoComPerda.toFixed(0)} (com 30% de perda)
+                  Próximos 30 dias por vencimento: R$ {receitaPrevista.toFixed(0)}
                 </p>
                 {clientesSemValor > 0 && (
                   <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1">

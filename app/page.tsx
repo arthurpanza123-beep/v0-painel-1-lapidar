@@ -11,11 +11,12 @@ const ContasPage           = dynamic(() => import('@/components/pages/contas-pag
 const RenovacoesPage       = dynamic(() => import('@/components/pages/renovacoes-page').then(m => ({ default: m.RenovacoesPage })), { ssr: false })
 const FinanceiroPage       = dynamic(() => import('@/components/pages/financeiro-page').then(m => ({ default: m.FinanceiroPage })), { ssr: false })
 const ProblemasPage        = dynamic(() => import('@/components/pages/problemas-page').then(m => ({ default: m.ProblemasPage })), { ssr: false })
-const ConfiguracoesPage    = dynamic(() => import('@/components/pages/configuracoes-page').then(m => ({ default: m.ConfiguracoesPage })), { ssr: false })
+const CodexPage            = dynamic(() => import('@/components/pages/codex-page').then(m => ({ default: m.CodexPage })), { ssr: false })
 const DebugPage            = dynamic(() => import('@/components/pages/debug-page').then(m => ({ default: m.DebugPage })), { ssr: false })
 const PipelinePage         = dynamic(() => import('@/components/pages/pipeline-page').then(m => ({ default: m.PipelinePage })), { ssr: false })
 const DashboardPage        = dynamic(() => import('@/components/pages/dashboard-page').then(m => ({ default: m.DashboardPage })), { ssr: false })
 const Sidebar              = dynamic(() => import('@/components/layout/sidebar').then(m => ({ default: m.Sidebar })), { ssr: false })
+const MobileNav            = dynamic(() => import('@/components/layout/mobile-nav').then(m => ({ default: m.MobileNav })), { ssr: false })
 
 export type NavPage = 
   | 'dashboard'
@@ -28,7 +29,7 @@ export type NavPage =
   | 'renovacoes' 
   | 'financeiro' 
   | 'problemas' 
-  | 'configuracoes' 
+  | 'codex' 
   | 'debug'
 
 export default function App() {
@@ -46,20 +47,23 @@ export default function App() {
   return (
     <div className="flex min-h-screen" style={{ background: 'var(--background)' }}>
       <Sidebar activePage={page} onNavigate={setPage} />
-      <main className="flex-1 min-w-0 overflow-y-auto">
-        {page === 'dashboard'      && <DashboardPage onNavigate={setPage} />}
-        {page === 'pipeline'       && <PipelinePage />}
-        {page === 'gerar-teste'    && <GerarTesteWizard />}
-        {page === 'testes'         && <TestesPage />}
-        {page === 'ativar-clientes' && <AtivarClientesPage />}
-        {page === 'clientes'       && <ClientesPage />}
-        {page === 'contas'         && <ContasPage />}
-        {page === 'renovacoes'     && <RenovacoesPage />}
-        {page === 'financeiro'     && <FinanceiroPage />}
-        {page === 'problemas'      && <ProblemasPage />}
-        {page === 'configuracoes'  && <ConfiguracoesPage />}
-        {page === 'debug'          && <DebugPage />}
-      </main>
+      <div className="flex flex-1 min-w-0 flex-col">
+        <MobileNav activePage={page} onNavigate={setPage} />
+        <main className="flex-1 min-w-0 overflow-y-auto">
+          {page === 'dashboard'      && <DashboardPage onNavigate={setPage} />}
+          {page === 'pipeline'       && <PipelinePage />}
+          {page === 'gerar-teste'    && <GerarTesteWizard />}
+          {page === 'testes'         && <TestesPage />}
+          {page === 'ativar-clientes' && <AtivarClientesPage />}
+          {page === 'clientes'       && <ClientesPage />}
+          {page === 'contas'         && <ContasPage />}
+          {page === 'renovacoes'     && <RenovacoesPage />}
+          {page === 'financeiro'     && <FinanceiroPage />}
+          {page === 'problemas'      && <ProblemasPage />}
+          {page === 'codex'          && <CodexPage />}
+          {page === 'debug'          && <DebugPage />}
+        </main>
+      </div>
     </div>
   )
 }

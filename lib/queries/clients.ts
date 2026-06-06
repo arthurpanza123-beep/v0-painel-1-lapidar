@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { MOCK_CLIENTES, type Cliente } from '@/lib/mock-data'
 import { maskPassword, maskPhone, maskUsername } from '@/lib/services/masking'
 import { formatDateBR } from '@/lib/services/date-normalizer'
+import { isOperationalNoise } from '@/lib/services/operational-window'
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '@/lib/supabase/server'
 
 export type ClientsQueryResult = {
@@ -116,7 +117,11 @@ export async function getClientsData(): Promise<ClientsQueryResult> {
     const accountByClientId = new Map((accountsRes.data as AccountRow[] || []).map((row) => [row.client_id || '', row]))
     const renewalByClientId = new Map((renewalsRes.data as RenewalRow[] || []).map((row) => [row.client_id || '', row]))
 
-    const items: Cliente[] = (clientsRes.data as ClientRow[] || []).map((client) => {
+    const realClients = (clientsRes.data as ClientRow[] || []).filter(
+      (client) => !isOperationalNoise(client.name)
+    )
+
+    const items: Cliente[] = realClients.map((client) => {
       const account = accountByClientId.get(client.id)
       const renewal = renewalByClientId.get(client.id)
       const app = account?.app_id ? appsById.get(account.app_id) : null

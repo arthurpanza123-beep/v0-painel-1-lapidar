@@ -7,6 +7,7 @@ import {
   Tv2, Server, ExternalLink
 } from 'lucide-react'
 import { MOCK_PIPELINE, type LeadPipeline, type EtapaPipeline } from '@/lib/mock-data'
+import { toDate } from '@/lib/services/date-normalizer'
 import { useToast } from '@/components/ui/toast'
 
 // Pipeline do dia - apenas 5 colunas
@@ -18,35 +19,44 @@ const ETAPAS: { id: EtapaPipeline; label: string; color: string; glow: string }[
   { id: 'pagou',        label: 'Pagou',          color: '#22c55e', glow: '34,197,94' },
 ]
 
-// Filtrar somente leads do dia atual (e não ativados/renovação)
-function isLeadDoDia(lead: LeadPipeline): boolean {
-  const hoje = new Date()
-  const hojeStr = hoje.toLocaleDateString('pt-BR') // DD/MM/YYYY
-  
+// Janela do funil: apenas leads com atividade nas últimas 24 horas.
+// Depois disso o lead sai do funil automaticamente (o pipeline "zera").
+const JANELA_HORAS = 24
+
+function dentroDaJanela(lead: LeadPipeline, agora: number): boolean {
   // Excluir ativados e renovações do pipeline do dia
   if (lead.etapa === 'ativado' || lead.etapa === 'renovacao' || lead.etapa === 'interessado') {
     return false
   }
-  
-  // Verificar se foi criado ou atualizado hoje
-  const criadoHoje = lead.criadoEm.includes(hojeStr) || lead.atualizadoEm.includes(hojeStr)
-  
-  // Para leads em teste_gerado ou testando, sempre mostrar se ainda ativo
-  if (lead.etapa === 'teste_gerado' || lead.etapa === 'testando' || lead.etapa === 'pagou') {
-    return true
-  }
-  
-  return criadoHoje
+
+  // Considera a atividade mais recente (criação ou atualização)
+  const criado = toDate(lead.criadoEm).getTime()
+  const atualizado = toDate(lead.atualizadoEm).getTime()
+  const ultimaAtividade = Math.max(
+    isNaN(criado) ? 0 : criado,
+    isNaN(atualizado) ? 0 : atualizado,
+  )
+  if (!ultimaAtividade) return false
+
+  const horasDesde = (agora - ultimaAtividade) / (1000 * 60 * 60)
+  return horasDesde >= 0 && horasDesde <= JANELA_HORAS
 }
 
 export function PipelinePage() {
   const [allLeads, setAllLeads] = useState<LeadPipeline[]>(MOCK_PIPELINE)
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock')
   const [selecionado, setSelecionado] = useState<LeadPipeline | null>(null)
+  const [agora, setAgora] = useState<number>(() => Date.now())
   const { addToast } = useToast()
 
-  // Filtrar apenas leads do dia
-  const leads = allLeads.filter(isLeadDoDia)
+  // Atualiza o "agora" a cada minuto para que leads com +24h saiam do funil sozinhos
+  useEffect(() => {
+    const id = setInterval(() => setAgora(Date.now()), 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Filtrar apenas leads das últimas 24 horas
+  const leads = allLeads.filter((lead) => dentroDaJanela(lead, agora))
 
   useEffect(() => {
     let alive = true
@@ -72,8 +82,9 @@ export function PipelinePage() {
     const idx = ETAPAS.findIndex(e => e.id === lead.etapa)
     if (idx < 0 || idx >= ETAPAS.length - 1) return
     const proxima = ETAPAS[idx + 1]
-    setAllLeads(prev => prev.map(l => l.id === lead.id ? { ...l, etapa: proxima.id } : l))
-    setSelecionado(prev => prev && prev.id === lead.id ? { ...prev, etapa: proxima.id } : prev)
+    const agoraBR = new Date().toLocaleString('pt-BR').replace(',', '')
+    setAllLeads(prev => prev.map(l => l.id === lead.id ? { ...l, etapa: proxima.id, atualizadoEm: agoraBR } : l))
+    setSelecionado(prev => prev && prev.id === lead.id ? { ...prev, etapa: proxima.id, atualizadoEm: agoraBR } : prev)
     addToast('success', `${lead.nome} → ${proxima.label}`)
   }
 
@@ -93,7 +104,7 @@ export function PipelinePage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>Pipeline de hoje</h1>
-              <p className="text-xs text-slate-500">{totalDia} leads no funil do dia · clique para detalhes</p>
+              <p className="text-xs text-slate-500">{totalDia} leads nas últimas 24h · zera automaticamente</p>
               <p className="mt-1 inline-flex items-center gap-2 rounded-full px-2.5 py-0.5 text-[10px] font-medium"
                  style={{ background: dataSource === 'supabase' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: dataSource === 'supabase' ? '#4ade80' : '#fbbf24' }}>
                 Fonte: {dataSource === 'supabase' ? 'Supabase' : 'Mock'}

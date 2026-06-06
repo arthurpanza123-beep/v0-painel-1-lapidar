@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Users, Search, Phone, Package, Server, Calendar, DollarSign,
-  RefreshCw, Eye, Copy, ExternalLink, Tv2, X, Key, Sparkles, Edit3
+  RefreshCw, Tv2, X, Key, Sparkles, Edit3
 } from 'lucide-react'
 import {
   MOCK_CLIENTES,
@@ -14,6 +14,7 @@ import {
 import { StatusBadge } from '@/components/shared/status-badge'
 import { ActionMenu, type ActionItem } from '@/components/shared/action-menu'
 import { ClientDrawer } from '@/components/shared/client-drawer'
+import { CredentialsModal } from '@/components/shared/credentials-modal'
 import { useToast } from '@/components/ui/toast'
 
 function diasParaVencer(vencimento: string): number {
@@ -103,6 +104,7 @@ export function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>(MOCK_CLIENTES)
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock')
   const [modalCredenciais, setModalCredenciais] = useState<Cliente | null>(null)
+  const [modalSegundaTela, setModalSegundaTela] = useState<Cliente | null>(null)
   const [modalCodex, setModalCodex] = useState<Cliente | null>(null)
   const [codexPrompt, setCodexPrompt] = useState('')
   const { addToast } = useToast()
@@ -151,7 +153,7 @@ export function ClientesPage() {
   const buildActions = (c: Cliente): ActionItem[] => [
     { label: 'Renovar', icon: RefreshCw, onClick: () => handleRenovar(c), color: '#60a5fa' },
     { label: 'Playlist / Credenciais', icon: Key, onClick: () => setModalCredenciais(c), color: '#14b8a6' },
-    { label: 'Ativar segunda tela', icon: Tv2, onClick: () => handleAtivarSegundaTela(c), color: '#f59e0b' },
+    { label: 'Ativar segunda tela', icon: Tv2, onClick: () => setModalSegundaTela(c), color: '#f59e0b' },
     { label: 'Codex IA', icon: Sparkles, onClick: () => setModalCodex(c), color: '#a78bfa' },
     { label: 'Editar dados', icon: Edit3, onClick: () => setSelecionado(c), color: '#64748b' },
   ]
@@ -164,31 +166,6 @@ export function ClientesPage() {
       source: 'painel1',
       client_id: c.id,
       flow: 'client_renewed',
-    })
-    window.open(`https://painel2.centralplayplus.com.br?${params.toString()}`, '_blank')
-  }
-
-  // Handler ativar segunda tela
-  const handleAtivarSegundaTela = (c: Cliente) => {
-    // Copiar usuário
-    if (c.usuario) {
-      navigator.clipboard.writeText(c.usuario)
-      addToast('info', `Usuario "${c.usuario}" copiado. Renove/libere no painel do provedor.`)
-    }
-    // Abrir painel do provedor
-    const painelKey = c.servidor?.toLowerCase().replace(/\s+/g, '') || 'yellow'
-    const painelUrl: Record<string, string> = {
-      'yellowbox': 'https://yellowbox.com/painel',
-      'yellow': 'https://yellowbox.com/painel',
-      'ninety': 'https://ninety.com/admin',
-      'cinemax': 'https://cinemax.com/painel',
-    }
-    window.open(painelUrl[painelKey] || painelUrl['yellow'], '_blank')
-    // Enviar contexto para Painel 2
-    const params = new URLSearchParams({
-      source: 'painel1',
-      client_id: c.id,
-      flow: 'second_screen_activated',
     })
     window.open(`https://painel2.centralplayplus.com.br?${params.toString()}`, '_blank')
   }
@@ -305,78 +282,11 @@ Problema/Pergunta: ${codexPrompt}`
         onRenovar={(c) => addToast('success', `Renovacao de ${c.nome} iniciada`)}
       />
 
-      {/* Modal Playlist / Credenciais */}
-      <AnimatePresence>
-        {modalCredenciais && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.8)' }}
-            onClick={() => setModalCredenciais(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md rounded-2xl overflow-hidden"
-              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-white">Playlist / Credenciais</h2>
-                  <button onClick={() => setModalCredenciais(null)} className="p-1 rounded-lg hover:bg-white/10">
-                    <X className="h-5 w-5 text-slate-400" />
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 mt-1">{modalCredenciais.nome}</p>
-              </div>
+      {/* Modal Playlist / Credenciais (catalogo real) */}
+      <CredentialsModal cliente={modalCredenciais} onClose={() => setModalCredenciais(null)} />
 
-              <div className="p-5 space-y-4">
-                {/* Credenciais do app atual */}
-                <div className="rounded-xl p-4" style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.2)' }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Key className="h-4 w-4 text-teal-400" />
-                    <span className="text-sm font-semibold text-teal-200">Credenciais {modalCredenciais.app}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {modalCredenciais.app.toLowerCase().includes('xcloud') && (
-                      <>
-                        <CredencialRow label="Host" value="http://yellowbox.dns.com:8080" />
-                        <CredencialRow label="Usuario" value={modalCredenciais.usuario || 'user_' + modalCredenciais.id} />
-                        <CredencialRow label="Senha" value={modalCredenciais.senha || '***'} />
-                        <CredencialRow label="Device Key" value="XXXX-XXXX-XXXX" masked />
-                      </>
-                    )}
-                    {!modalCredenciais.app.toLowerCase().includes('xcloud') && (
-                      <>
-                        <CredencialRow label="Codigo" value={`#${Math.floor(Math.random() * 9000) + 1000}`} />
-                        <CredencialRow label="Usuario" value={modalCredenciais.usuario || 'user_' + modalCredenciais.id} />
-                        <CredencialRow label="Senha" value={modalCredenciais.senha || '***'} />
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Opção trocar servidor/app */}
-                <button
-                  onClick={() => {
-                    setModalCredenciais(null)
-                    addToast('info', 'Selecione o novo app/servidor')
-                  }}
-                  className="w-full h-11 rounded-xl text-sm font-medium flex items-center justify-center gap-2"
-                  style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', color: '#60a5fa' }}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Trocar servidor/app
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Modal Ativar segunda tela (catalogo real) */}
+      <CredentialsModal cliente={modalSegundaTela} onClose={() => setModalSegundaTela(null)} segundaTela />
 
       {/* Modal Codex IA */}
       <AnimatePresence>
@@ -484,25 +394,5 @@ Problema/Pergunta: ${codexPrompt}`
         )}
       </AnimatePresence>
     </>
-  )
-}
-
-// Componente auxiliar para credenciais
-function CredencialRow({ label, value, masked }: { label: string; value: string; masked?: boolean }) {
-  const { addToast } = useToast()
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value)
-    addToast('success', `${label} copiado!`)
-  }
-  return (
-    <div className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)' }}>
-      <div>
-        <span className="text-[10px] text-slate-500 uppercase">{label}</span>
-        <p className="text-sm font-mono text-slate-200">{masked ? '••••••••' : value}</p>
-      </div>
-      <button onClick={handleCopy} className="p-1.5 rounded-lg hover:bg-white/10">
-        <Copy className="h-4 w-4 text-slate-500" />
-      </button>
-    </div>
   )
 }

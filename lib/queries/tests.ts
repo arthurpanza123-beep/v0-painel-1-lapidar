@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { MOCK_TESTES, type StatusTeste, type Teste } from '@/lib/mock-data'
 import { formatDateBR } from '@/lib/services/date-normalizer'
 import { maskDeviceKey, maskPassword, maskPhone, maskUrl, maskUsername } from '@/lib/services/masking'
+import { isOperationalNoise } from '@/lib/services/operational-window'
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '@/lib/supabase/server'
 
 export type TestsQueryResult = {
@@ -80,7 +81,12 @@ export async function getTestsData(): Promise<TestsQueryResult> {
     const appsById = new Map((appsRes.data as AppRow[] || []).map((row) => [row.id, row]))
     const panelsById = new Map((panelsRes.data as PanelRow[] || []).map((row) => [row.id, row]))
 
-    const items: Teste[] = (testsRes.data as TestRow[] || []).map((test) => {
+    const realTests = (testsRes.data as TestRow[] || []).filter((test) => {
+      const client = clientsById.get(test.client_id)
+      return !isOperationalNoise(client?.name)
+    })
+
+    const items: Teste[] = realTests.map((test) => {
       const client = clientsById.get(test.client_id)
       const account = test.account_id ? accountsById.get(test.account_id) : undefined
       const app = test.app_id ? appsById.get(test.app_id) : undefined

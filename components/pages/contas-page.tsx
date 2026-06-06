@@ -439,15 +439,16 @@ export function ContasPage() {
           </button>
         </div>
 
-        {/* Lista */}
-        <div className="w-full max-w-2xl space-y-3">
+        {/* Lista - 2 colunas */}
+        <div className="w-full max-w-4xl">
           {contasOrdenadas.length === 0 ? (
             <div className="rounded-xl p-12 text-center" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
               <Layers className="h-10 w-10 mx-auto mb-3" style={{ color: '#1e293b' }} />
               <p className="text-slate-500 text-sm">Nenhuma conta encontrada</p>
             </div>
           ) : (
-            contasOrdenadas.map((conta) => {
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+            {contasOrdenadas.map((conta) => {
               const temVagaLivre = conta.clientesVinculados.length < conta.vagasTotal
               return (
                 <AccountGroupCard
@@ -458,7 +459,8 @@ export function ContasPage() {
                   onCredenciais={() => setCredenciais(conta)}
                 />
               )
-            })
+            })}
+            </div>
           )}
         </div>
       </div>
