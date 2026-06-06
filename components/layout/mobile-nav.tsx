@@ -47,16 +47,16 @@ export function MobileNav({ activePage, onNavigate }: MobileNavProps) {
         className="md:hidden sticky top-0 z-30 flex items-center justify-between px-4 h-14 shrink-0"
         style={{ background: 'var(--sidebar)', borderBottom: '1px solid var(--sidebar-border)' }}
       >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg">
-            <Image
-              src="/images/central-play-logo.png"
-              alt="Central Play Plus"
-              fill
-              sizes="32px"
-              className="object-cover object-left scale-[2.2]"
-            />
-          </div>
+        <div className="flex items-center gap-3 min-w-0">
+          <Image
+            src="/images/central-play-logo.png"
+            alt="Central Play Plus"
+            width={400}
+            height={200}
+            priority
+            className="h-7 w-auto shrink-0"
+          />
+          <span className="h-5 w-px shrink-0 bg-[color:var(--sidebar-border)]" aria-hidden="true" />
           <p className="text-sm font-semibold text-white truncate" style={{ fontFamily: 'var(--font-display)' }}>{activeLabel}</p>
         </div>
 
