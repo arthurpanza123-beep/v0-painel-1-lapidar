@@ -29,6 +29,13 @@ export interface Teste {
   m3u?: string
   status: StatusTeste
   validade: string
+  expiresAt?: string
+  durationMinutes?: number
+  gameModeDuration?: boolean
+  xcloudRemoved?: boolean
+  canExpire?: boolean
+  copyUsername?: string
+  rawStatus?: string
   criadoEm: string
   horario: string
 }

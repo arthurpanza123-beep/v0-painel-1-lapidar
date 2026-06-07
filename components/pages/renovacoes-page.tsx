@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import {
-  CheckCircle2, CalendarClock, Copy, RefreshCw, Eye, DollarSign, ExternalLink,
+  CheckCircle2, CalendarClock, Copy, RefreshCw, Eye, DollarSign,
 } from 'lucide-react'
 import {
   MOCK_RENOVACOES,
@@ -62,25 +62,20 @@ export function RenovacoesPage() {
     vencemEm7Dias: renovacoes.filter((r) => r.diasRestantes > 0 && r.diasRestantes <= 7).length,
   }
 
-  const abrirPainel2 = (r: Renovacao) => {
-    window.open(`https://painel2.centralplayplus.com.br?source=painel1&client_id=${r.id}&flow=renewal`, '_blank')
-  }
-
   const handleMarcarPago = (id: string, nome: string) => {
     setRenovacoes((prev) => prev.map((r) => (r.id === id ? { ...r, status: 'pago' as StatusRenovacao } : r)))
     addToast('success', `${nome} marcado como pago`)
   }
 
   const copiarCobranca = (r: Renovacao) => {
-    navigator.clipboard.writeText(`${r.cliente} | ${r.plano} | R$ ${r.valor} | Vence: ${r.vencimento}`)
-    addToast('success', 'Dados copiados')
+    navigator.clipboard.writeText(`Ola ${r.cliente}! Renovacao ${r.plano} - R$ ${r.valor}. Vence em ${r.vencimento}.`)
+    addToast('success', 'Cobranca copiada')
   }
 
   const buildActions = (r: Renovacao): ActionItem[] => {
     const pago = r.status === 'pago'
     const items: ActionItem[] = [
-      { label: 'Copiar dados', icon: Copy, onClick: () => copiarCobranca(r) },
-      { label: 'Abrir no Painel 2', icon: ExternalLink, onClick: () => abrirPainel2(r), color: '#4ade80' },
+      { label: 'Copiar cobranca', icon: Copy, onClick: () => copiarCobranca(r) },
       { label: 'Renovar', icon: RefreshCw, onClick: () => addToast('success', `Renovacao de ${r.cliente} iniciada`), color: '#60a5fa' },
     ]
     if (!pago) items.push({ label: 'Marcar pago', icon: CheckCircle2, onClick: () => handleMarcarPago(r.id, r.cliente), color: '#22c55e' })
@@ -110,10 +105,6 @@ export function RenovacoesPage() {
         <h1 className="text-2xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}>Renovacoes</h1>
         <p className="text-slate-500 text-sm">
           {urgentes} urgentes · R$ {valorTotal.toFixed(0)} a receber
-        </p>
-        <p className="mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-medium"
-           style={{ background: dataSource === 'supabase' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: dataSource === 'supabase' ? '#4ade80' : '#fbbf24' }}>
-          Fonte: {dataSource === 'supabase' ? 'Supabase' : 'Mock'}
         </p>
       </div>
 
@@ -147,7 +138,7 @@ export function RenovacoesPage() {
             <div key={grupo.id}>
               <div className="flex items-center justify-between mb-3 px-1">
                 <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full" style={{ background: grupo.color, boxShadow: `0 0 8px ${grupo.color}` }} />
+                  <span className="h-2 w-2 rounded-full" style={{ background: grupo.color }} />
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: grupo.color }}>
                     {grupo.label}
                   </span>

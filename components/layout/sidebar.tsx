@@ -3,35 +3,35 @@
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import type { NavPage } from '@/app/page'
-import { 
-  Headphones, 
-  TestTube2, 
-  Users, 
-  Wallet, 
-  RefreshCw, 
-  DollarSign, 
-  AlertTriangle, 
-  Sparkles, 
-  Terminal,
-  LogOut,
+import {
+  AlertTriangle,
+  DollarSign,
+  Headphones,
   Kanban,
   LayoutDashboard,
-  Zap
+  LogOut,
+  RefreshCw,
+  Settings,
+  Terminal,
+  TestTube2,
+  Users,
+  Wallet,
+  Zap,
 } from 'lucide-react'
 
 const NAV_ITEMS: { id: NavPage; label: string; Icon: React.FC<{ className?: string }> }[] = [
-  { id: 'dashboard',    label: 'Dashboard',    Icon: ({ className }) => <LayoutDashboard className={className} /> },
-  { id: 'pipeline',     label: 'Pipeline',     Icon: ({ className }) => <Kanban className={className} /> },
-  { id: 'gerar-teste',  label: 'Gerar Teste',  Icon: ({ className }) => <Headphones className={className} /> },
-  { id: 'testes',       label: 'Testes',       Icon: ({ className }) => <TestTube2 className={className} /> },
+  { id: 'dashboard', label: 'Dashboard', Icon: ({ className }) => <LayoutDashboard className={className} /> },
+  { id: 'pipeline', label: 'Pipeline', Icon: ({ className }) => <Kanban className={className} /> },
+  { id: 'gerar-teste', label: 'Gerar Teste', Icon: ({ className }) => <Headphones className={className} /> },
+  { id: 'testes', label: 'Testes', Icon: ({ className }) => <TestTube2 className={className} /> },
   { id: 'ativar-clientes', label: 'Ativar Clientes', Icon: ({ className }) => <Zap className={className} /> },
-  { id: 'clientes',     label: 'Clientes',     Icon: ({ className }) => <Users className={className} /> },
-  { id: 'contas',       label: 'Contas',       Icon: ({ className }) => <Wallet className={className} /> },
-  { id: 'renovacoes',   label: 'Renovações',   Icon: ({ className }) => <RefreshCw className={className} /> },
-  { id: 'financeiro',   label: 'Financeiro',   Icon: ({ className }) => <DollarSign className={className} /> },
-  { id: 'problemas',    label: 'Problemas',    Icon: ({ className }) => <AlertTriangle className={className} /> },
-  { id: 'codex',        label: 'Codex',        Icon: ({ className }) => <Sparkles className={className} /> },
-  { id: 'debug',        label: 'Logs',         Icon: ({ className }) => <Terminal className={className} /> },
+  { id: 'clientes', label: 'Clientes', Icon: ({ className }) => <Users className={className} /> },
+  { id: 'contas', label: 'Contas / Telas', Icon: ({ className }) => <Wallet className={className} /> },
+  { id: 'renovacoes', label: 'Renovações', Icon: ({ className }) => <RefreshCw className={className} /> },
+  { id: 'financeiro', label: 'Financeiro', Icon: ({ className }) => <DollarSign className={className} /> },
+  { id: 'problemas', label: 'Problemas', Icon: ({ className }) => <AlertTriangle className={className} /> },
+  { id: 'configuracoes', label: 'Configurações', Icon: ({ className }) => <Settings className={className} /> },
+  { id: 'debug', label: 'Logs', Icon: ({ className }) => <Terminal className={className} /> },
 ]
 
 interface SidebarProps {
@@ -49,7 +49,6 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
         borderRight: '1px solid var(--sidebar-border)',
       }}
     >
-      {/* Logo */}
       <div className="mb-6 px-1.5">
         <Image
           src="/images/central-play-logo.png"
@@ -61,7 +60,6 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
         />
       </div>
 
-      {/* Nav items */}
       <nav className="flex flex-col gap-0.5 flex-1 overflow-y-auto">
         {NAV_ITEMS.map(({ id, label, Icon }) => {
           const isActive = activePage === id
@@ -89,8 +87,6 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
             >
               <Icon className="h-[18px] w-[18px] shrink-0" />
               <span className="truncate">{label}</span>
-
-              {/* Active indicator dot */}
               {isActive && (
                 <span
                   className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full"
@@ -102,7 +98,6 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
         })}
       </nav>
 
-      {/* Bottom: Sair */}
       <button
         className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all duration-200 text-[color:var(--sidebar-foreground)] hover:text-red-400 hover:bg-white/5 mt-2"
         aria-label="Sair"

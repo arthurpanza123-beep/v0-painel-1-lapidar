@@ -1,15 +1,16 @@
 import { MOCK_CLIENTES, MOCK_CREDITOS, type CreditoPainel } from '@/lib/mock-data'
-import { isOperationalNoise } from '@/lib/services/operational-window'
+import { isOperationalNoise, operationWindows } from '@/lib/services/operational-window'
 import { getSupabaseServerClient, isSupabaseServerConfigured } from '@/lib/supabase/server'
 
 export type FinanceQueryResult = {
   data_source: 'mock' | 'supabase'
   metrics: {
     receitaMesAtual: number
+    renovacaoMensalPrevista: number
+    receitaVencimento30d: number
     receitaPrevista30d: number
     receitaPrevista60d: number
     receitaPrevista90d: number
-    renovacaoMensalPrevista: number
     lucroEstimado: number
     renovacoesPrevistas: number
     creditosDisponiveis: number
@@ -18,22 +19,14 @@ export type FinanceQueryResult = {
     conversaoDia: number
     testesPagos: number
     testesAtivosHoje: number
+    clientesContados: number
+    clientesForaSoma: number
   }
   porPlano: { plano: string; valor: number }[]
   creditos: CreditoPainel[]
 }
 
-// Normaliza o valor de um plano para o equivalente mensal (regra MRR do bot).
-const PLAN_MONTHS: Record<string, number> = {
-  mensal: 1, trimestral: 3, semestral: 6, anual: 12,
-}
-function monthlyEquivalent(plano: string | null | undefined, valor: number): number {
-  const key = String(plano || '').toLowerCase().trim()
-  const months = PLAN_MONTHS[key] || 1
-  return valor / months
-}
-
-type ClientRow = { id: string; name: string | null; status: string | null }
+type ClientRow = { id: string; name?: string | null; status: string | null }
 type RenewalRow = { client_id?: string | null; plan_key: string | null; amount_cents: number | null; status: string | null; due_at: string | null; created_at?: string | null }
 type PaymentRow = { amount_cents: number | null; status: string | null; paid_at: string | null }
 type TestRow = { status: string | null; created_at: string | null }
@@ -44,39 +37,85 @@ function money(cents?: number | null): number {
   return Number(((cents || 0) / 100).toFixed(2))
 }
 
+function latestRenewalsByClient(renewals: RenewalRow[]): Map<string, RenewalRow> {
+  const map = new Map<string, RenewalRow>()
+  for (const renewal of renewals) {
+    const clientId = renewal.client_id || ''
+    if (!clientId) continue
+    const current = map.get(clientId)
+    if (!current || String(renewal.created_at || '') > String(current.created_at || '')) {
+      map.set(clientId, renewal)
+    }
+  }
+  return map
+}
+
+function isTemporaryClient(client: ClientRow): boolean {
+  return isOperationalNoise(client.name)
+}
+
+function isMonthlyPlan(planKey?: string | null): boolean {
+  return String(planKey || '').toLowerCase() === 'mensal'
+}
+
+function calculateMonthlyRenewalForecast(clients: ClientRow[], renewals: RenewalRow[]) {
+  const latest = latestRenewalsByClient(renewals)
+  let total = 0
+  let counted = 0
+  let outside = 0
+  const byPlan = new Map<string, number>()
+
+  for (const client of clients) {
+    if (client.status !== 'active' || isTemporaryClient(client)) continue
+    const renewal = latest.get(client.id)
+    const amount = money(renewal?.amount_cents)
+    if (renewal && isMonthlyPlan(renewal.plan_key) && amount > 0) {
+      total += amount
+      counted += 1
+      const plan = renewal.plan_key ? renewal.plan_key.charAt(0).toUpperCase() + renewal.plan_key.slice(1) : 'Mensal'
+      byPlan.set(plan, (byPlan.get(plan) || 0) + amount)
+    } else {
+      outside += 1
+    }
+  }
+
+  return { total, counted, outside, byPlan }
+}
+
+function yellowBoxOperationalCredits(): number {
+  const parsed = Number(process.env.YELLOW_BOX_CREDITS || process.env.BRASIL_YELLOW_CREDITS || 9)
+  return Number.isFinite(parsed) ? parsed : 9
+}
+
 function buildMockResult(): FinanceQueryResult {
   const clientesAtivos = MOCK_CLIENTES.filter((c) => c.status === 'ativo')
   const receitaMesAtual = clientesAtivos.reduce((acc, c) => acc + c.valor, 0)
-  const renovacaoMensalPrevista = clientesAtivos.reduce((acc, c) => acc + monthlyEquivalent(c.plano, c.valor), 0)
   const creditosDisponiveis = MOCK_CREDITOS.reduce((acc, c) => acc + c.saldo, 0)
   const porPlanoMap = clientesAtivos.reduce<Record<string, number>>((acc, c) => {
     acc[c.plano] = (acc[c.plano] || 0) + c.valor
     return acc
   }, {})
 
-  // Projeção: 30d = soma do valor dos clientes ativos (a receber);
-  // 60d/90d crescem de forma progressiva (cada período = anterior × 2 − 20% = × 1.6).
-  const previsao30d = receitaMesAtual
-  const previsao60d = previsao30d * 1.6
-  const previsao90d = previsao60d * 1.6
-
   return {
     data_source: 'mock',
-    metrics: {
-      receitaMesAtual,
-      receitaPrevista30d: previsao30d,
-      receitaPrevista60d: previsao60d,
-      receitaPrevista90d: previsao90d,
-      renovacaoMensalPrevista,
+      metrics: {
+        receitaMesAtual,
+        renovacaoMensalPrevista: receitaMesAtual,
+        receitaVencimento30d: receitaMesAtual,
+        receitaPrevista30d: receitaMesAtual,
+        receitaPrevista60d: receitaMesAtual * 2,
+        receitaPrevista90d: receitaMesAtual * 3,
       lucroEstimado: receitaMesAtual - MOCK_CREDITOS.reduce((acc, c) => acc + c.custoPorAtivacao * 5, 0),
       renovacoesPrevistas: clientesAtivos.length,
       creditosDisponiveis,
       ticketMedio: clientesAtivos.length ? receitaMesAtual / clientesAtivos.length : 0,
       clientesAtivos: clientesAtivos.length,
-      conversaoDia: 0,
-      testesPagos: 0,
-      testesAtivosHoje: 0,
-    },
+        conversaoDia: 0,
+        testesPagos: 0,
+        testesAtivosHoje: 0,
+        clientesContados: clientesAtivos.length,
+        clientesForaSoma: 0,
+      },
     porPlano: Object.entries(porPlanoMap).map(([plano, valor]) => ({ plano, valor })).sort((a, b) => b.valor - a.valor),
     creditos: MOCK_CREDITOS.map((credito) => ({ ...credito })),
   }
@@ -89,8 +128,9 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
 
   try {
     const now = new Date()
+    const windows = operationWindows(now)
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+    const todayStart = windows.todayStartIso
 
     const [clientsRes, renewalsRes, paymentsRes, testsRes, creditsRes, panelsRes] = await Promise.all([
       db.from('clients').select('id,name,status'),
@@ -108,7 +148,7 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
     if (creditsRes.error) throw new Error(creditsRes.error.message)
     if (panelsRes.error) throw new Error(panelsRes.error.message)
 
-    const clients = (clientsRes.data as ClientRow[] || []).filter((c) => !isOperationalNoise(c.name))
+    const clients = (clientsRes.data as ClientRow[] || [])
     const renewals = (renewalsRes.data as RenewalRow[] || [])
     const payments = (paymentsRes.data as PaymentRow[] || [])
     const tests = (testsRes.data as TestRow[] || [])
@@ -130,56 +170,55 @@ export async function getFinanceData(): Promise<FinanceQueryResult> {
         alertaBaixo: credit.status !== 'ok' || saldo <= Math.max(custo * 5, 50),
       }
     })
+    if (!creditos.length) {
+      const saldo = yellowBoxOperationalCredits()
+      creditos.push({
+        id: 'brasil_yellow_operational_balance',
+        painel: 'Brasil / Yellow Box',
+        saldo,
+        custoPorAtivacao: 1,
+        ativacoesRestantes: saldo,
+        alertaBaixo: saldo <= 5,
+      })
+    }
 
     const paidPayments = payments.filter((p) => p.status === 'paid')
     const receitaMesAtual = paidPayments.reduce((acc, p) => acc + money(p.amount_cents), 0)
-
-    // "A receber" / próximos 30 dias = soma do valor dos clientes ativos reais.
-    // Usa a renovação mais recente de cada cliente ativo.
-    const activeClientIds = new Set(clients.filter((c) => c.status === 'active').map((c) => c.id))
-    const latestRenewalByClient = new Map<string, RenewalRow>()
-    for (const r of renewals) {
-      const cid = r.client_id || ''
-      if (!cid || !activeClientIds.has(cid)) continue
-      const cur = latestRenewalByClient.get(cid)
-      if (!cur || String(r.created_at || '') > String(cur.created_at || '')) latestRenewalByClient.set(cid, r)
-    }
-    const aReceber = Array.from(latestRenewalByClient.values()).reduce((acc, r) => acc + money(r.amount_cents), 0)
-    const previsao30d = aReceber
-    const previsao60d = previsao30d * 1.6
-    const previsao90d = previsao60d * 1.6
-    const porPlanoMap = renewals.reduce<Record<string, number>>((acc, r) => {
-      if (!r.amount_cents) return acc
-      const plano = r.plan_key ? r.plan_key.charAt(0).toUpperCase() + r.plan_key.slice(1) : 'Sem plano'
-      acc[plano] = (acc[plano] || 0) + money(r.amount_cents)
-      return acc
-    }, {})
+    const dueForecast = (until: string) => renewals
+      .filter((r) => !['paid', 'cancelled'].includes(String(r.status || '')) && r.due_at && r.due_at >= now.toISOString() && r.due_at <= until)
+      .reduce((acc, r) => acc + money(r.amount_cents), 0)
+    const monthlyForecast = calculateMonthlyRenewalForecast(clients, renewals)
+    const porPlanoMap = Object.fromEntries(monthlyForecast.byPlan)
     const clientesAtivos = clients.filter((c) => c.status === 'active').length
-    const renovacaoMensalPrevista = renewals
-      .filter((r) => r.status !== 'paid' && r.status !== 'cancelled' && r.amount_cents)
-      .reduce((acc, r) => acc + monthlyEquivalent(r.plan_key, money(r.amount_cents)), 0)
     const testesPagos = tests.filter((t) => t.status === 'converted').length
     const testesAtivosHoje = tests.filter((t) => t.status === 'active').length
     const totalTestes = tests.length
     const creditosDisponiveis = creditos.reduce((acc, c) => acc + c.saldo, 0)
     const custoEstimado = creditos.reduce((acc, c) => acc + c.custoPorAtivacao * 5, 0)
+    const renovacaoMensalPrevista = Number(monthlyForecast.total.toFixed(2))
+    const receitaVencimento30d = dueForecast(windows.in30dIso)
+    const receitaVencimento60d = dueForecast(windows.in60dIso)
+    const receitaVencimento90d = dueForecast(windows.in90dIso)
 
     return {
       data_source: 'supabase',
       metrics: {
         receitaMesAtual,
-        receitaPrevista30d: previsao30d,
-        receitaPrevista60d: previsao60d,
-        receitaPrevista90d: previsao90d,
         renovacaoMensalPrevista,
-        lucroEstimado: receitaMesAtual - custoEstimado,
-        renovacoesPrevistas: renewals.filter((r) => r.status !== 'paid' && r.status !== 'cancelled').length,
+        receitaVencimento30d,
+        receitaPrevista30d: Number(receitaVencimento30d.toFixed(2)),
+        receitaPrevista60d: Number(receitaVencimento60d.toFixed(2)),
+        receitaPrevista90d: Number(receitaVencimento90d.toFixed(2)),
+        lucroEstimado: renovacaoMensalPrevista - custoEstimado,
+        renovacoesPrevistas: monthlyForecast.counted,
         creditosDisponiveis,
-        ticketMedio: clientesAtivos ? receitaMesAtual / clientesAtivos : 0,
+        ticketMedio: monthlyForecast.counted ? renovacaoMensalPrevista / monthlyForecast.counted : 0,
         clientesAtivos,
         conversaoDia: totalTestes ? Math.round((testesPagos / totalTestes) * 100) : 0,
         testesPagos,
         testesAtivosHoje,
+        clientesContados: monthlyForecast.counted,
+        clientesForaSoma: monthlyForecast.outside,
       },
       porPlano: Object.entries(porPlanoMap).map(([plano, valor]) => ({ plano, valor })).sort((a, b) => b.valor - a.valor),
       creditos,

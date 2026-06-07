@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m as motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Layers, Copy, X, UserPlus, Calendar,
   Server, KeyRound, Check, Plus, MessageCircle, Tv2,
@@ -14,8 +14,9 @@ import {
 } from '@/lib/mock-data'
 import { AccountGroupCard } from '@/components/shared/account-group-card'
 import { useToast } from '@/components/ui/toast'
+import { buildProviderCredentials, getProviderPanelUrl, listCompatibleApps } from '@/lib/config/provider-catalog'
 
-type VagaTarget = { conta: Conta; index: number }
+type TelaTarget = { conta: Conta; index: number }
 type ActivationRecommendation = {
   recommended: boolean
   reason: string
@@ -47,12 +48,12 @@ function ModalShell({ children, onClose }: { children: React.ReactNode; onClose:
   )
 }
 
-// ——— Modal: Ativar cliente que pagou em vaga livre ———
+// ——— Modal: Ativar cliente que pagou em tela livre ———
 function AtivarModal({
   target, onClose, onConfirm,
   candidatos,
 }: {
-  target: VagaTarget
+  target: TelaTarget
   onClose: () => void
   onConfirm: (cliente: Cliente, recommendation: ActivationRecommendation | null) => Promise<void>
   candidatos: Cliente[]
@@ -119,8 +120,8 @@ function AtivarModal({
         <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>
           <UserPlus className="h-6 w-6" />
         </div>
-        <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>Ativar cliente na vaga</h3>
-        <p className="text-xs text-slate-500 mt-1">Vaga {target.index + 1} · Conta {conta.codigo}</p>
+        <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>Usar tela</h3>
+        <p className="text-xs text-slate-500 mt-1">Tela {target.index + 1} · Conta {conta.codigo}</p>
       </div>
 
       <div className="p-5 space-y-4">
@@ -178,24 +179,24 @@ function AtivarModal({
 
         {selecionado && (
           <div>
-            <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-2 block">3. Recomendacao de vaga</label>
+            <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-2 block">3. Recomendacao de tela</label>
             <div className="rounded-lg p-3 text-left" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
               {recommendationLoading ? (
-                <p className="text-xs text-slate-400">Buscando melhor vaga...</p>
+                <p className="text-xs text-slate-400">Buscando melhor tela...</p>
               ) : recommendationError ? (
                 <p className="text-xs text-red-300">{recommendationError}</p>
               ) : recommendation ? (
                 <>
                   <p className="text-xs font-semibold" style={{ color: recommendation.requires_new_account ? '#f59e0b' : '#4ade80' }}>
                     {recommendation.requires_new_account
-                      ? 'Nenhuma vaga livre. Sera necessario criar nova conta.'
-                      : `Melhor opcao: usar vaga livre na conta ${recommendation.account_label || conta.codigo}`}
+                      ? 'Nenhuma tela livre. Sera necessario criar nova conta.'
+                      : `Melhor opcao: usar tela livre na conta ${recommendation.account_label || conta.codigo}`}
                   </p>
                   <p className="text-[11px] text-slate-500 mt-1">{recommendation.reason}</p>
                   {recommendation.slot_label && <p className="text-[11px] text-slate-400 mt-2">Tela recomendada: {recommendation.slot_label}</p>}
                 </>
               ) : (
-                <p className="text-xs text-slate-500">Selecione um cliente para calcular a vaga.</p>
+                <p className="text-xs text-slate-500">Selecione um cliente para calcular a tela.</p>
               )}
             </div>
           </div>
@@ -228,7 +229,7 @@ function AtivarModal({
           className="flex-1 h-10 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-40"
           style={{ background: '#22c55e', color: '#06140a' }}
         >
-          <Check className="h-4 w-4" /> {submitting ? 'Ativando...' : 'Vincular a vaga'}
+          <Check className="h-4 w-4" /> {submitting ? 'Ativando...' : 'Usar esta tela'}
         </button>
         <button onClick={onClose} className="h-10 px-4 rounded-xl text-sm font-medium flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: '#94a3b8' }}>
           <X className="h-4 w-4" />
@@ -241,8 +242,32 @@ function AtivarModal({
 // ——— Modal: Credenciais ———
 function CredenciaisModal({ conta, onClose }: { conta: Conta; onClose: () => void }) {
   const { addToast } = useToast()
+  const providerPanelUrl = getProviderPanelUrl(conta.servidor)
+  const compatibleApps = listCompatibleApps(conta.servidor).slice(0, 8)
+  const selectedCredential = (() => {
+    try {
+      return buildProviderCredentials({
+        provider: conta.servidor,
+        app: conta.app,
+        username: conta.usuario,
+        password: conta.senha,
+      })
+    } catch {
+      return null
+    }
+  })()
   const handleCopy = () => {
-    const txt = `Conta: ${conta.codigo}\nUsuario: ${conta.usuario}\nSenha: ${conta.senha}\nApp: ${conta.app}\nServidor: ${conta.servidor}\nValidade: ${conta.vencimento}`
+    const txt = [
+      `Conta: ${conta.codigo}`,
+      `App: ${conta.app}`,
+      selectedCredential?.providerCode ? `Provider: ${selectedCredential.providerCode}` : null,
+      selectedCredential?.code ? `Codigo: ${selectedCredential.code}` : null,
+      selectedCredential?.dns ? `DNS: ${selectedCredential.dns}` : null,
+      `Usuario: ${conta.usuario}`,
+      `Senha: ${conta.senha}`,
+      `Servidor: ${conta.servidor}`,
+      `Validade: ${conta.vencimento}`,
+    ].filter(Boolean).join('\n')
     navigator.clipboard.writeText(txt)
     addToast('success', 'Credenciais copiadas')
   }
@@ -250,7 +275,7 @@ function CredenciaisModal({ conta, onClose }: { conta: Conta; onClose: () => voi
   return (
     <ModalShell onClose={onClose}>
       <div className="p-5 text-center" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa' }}>
+        <div className="h-14 w-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(20,184,166,0.12)', color: '#14b8a6' }}>
           <KeyRound className="h-6 w-6" />
         </div>
         <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>{conta.codigo}</h3>
@@ -261,18 +286,38 @@ function CredenciaisModal({ conta, onClose }: { conta: Conta; onClose: () => voi
           { label: 'Usuario', value: conta.usuario },
           { label: 'Senha', value: conta.senha },
           { label: 'Servidor', value: conta.servidor },
+          selectedCredential?.providerCode ? { label: 'Provider', value: selectedCredential.providerCode } : null,
+          selectedCredential?.code ? { label: 'Codigo', value: selectedCredential.code } : null,
+          selectedCredential?.dns ? { label: 'DNS', value: selectedCredential.dns } : null,
           { label: 'Validade', value: conta.vencimento },
-        ].map(({ label, value }) => (
+        ].filter((item): item is { label: string; value: string } => Boolean(item)).map(({ label, value }) => (
           <div key={label} className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid var(--border)' }}>
             <span className="text-xs text-slate-500">{label}</span>
             <span className="text-sm text-white font-mono">{value}</span>
           </div>
         ))}
+        {compatibleApps.length > 0 && (
+          <div className="pt-2">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Apps compativeis</p>
+            <div className="flex flex-wrap gap-2">
+              {compatibleApps.map((app) => (
+                <span key={app.key} className="rounded-lg px-2 py-1 text-[11px]" style={{ background: app.recommended ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.04)', color: app.recommended ? '#4ade80' : '#94a3b8', border: '1px solid var(--border)' }}>
+                  {app.name}{app.providerCode ? ` · ${app.providerCode}` : app.code ? ` · ${app.code}` : app.dns ? ` · ${app.dns}` : ''}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       <div className="p-5 flex gap-2" style={{ borderTop: '1px solid var(--border)' }}>
         <button onClick={handleCopy} className="flex-1 h-10 rounded-xl text-sm font-medium flex items-center justify-center gap-2" style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa' }}>
           <Copy className="h-4 w-4" /> Copiar
         </button>
+        {providerPanelUrl && (
+          <button onClick={() => window.open(providerPanelUrl, '_blank')} className="h-10 px-3 rounded-xl text-sm font-medium flex items-center justify-center" style={{ background: 'rgba(20,184,166,0.12)', border: '1px solid rgba(20,184,166,0.25)', color: '#2dd4bf' }}>
+            Painel
+          </button>
+        )}
         <button onClick={onClose} className="h-10 px-4 rounded-xl text-sm font-medium flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: '#94a3b8' }}>
           <X className="h-4 w-4" />
         </button>
@@ -288,7 +333,7 @@ export function ContasPage() {
   const [clientes, setClientes] = useState<Cliente[]>(MOCK_CLIENTES)
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock')
   const [credenciais, setCredenciais] = useState<Conta | null>(null)
-  const [ativarTarget, setAtivarTarget] = useState<VagaTarget | null>(null)
+  const [ativarTarget, setAtivarTarget] = useState<TelaTarget | null>(null)
   const { addToast } = useToast()
 
   async function carregarDados(alive = true) {
@@ -341,14 +386,11 @@ export function ContasPage() {
     )
   })
 
-  // Ordenar: vagas livres primeiro, depois por quantidade de vagas
   const contasOrdenadas = [...contasFiltradas].sort((a, b) => {
     const vagasLivresA = a.vagasTotal - a.clientesVinculados.length
     const vagasLivresB = b.vagasTotal - b.clientesVinculados.length
-    // Contas com vaga livre primeiro
     if (vagasLivresA > 0 && vagasLivresB === 0) return -1
     if (vagasLivresA === 0 && vagasLivresB > 0) return 1
-    // Entre contas com vaga livre, priorizar as com 1 cliente (familia incompleta)
     if (vagasLivresA > 0 && vagasLivresB > 0) {
       return a.clientesVinculados.length - b.clientesVinculados.length
     }
@@ -389,26 +431,22 @@ export function ContasPage() {
         {/* Header */}
         <div className="text-center mb-8 max-w-xl">
           <div className="flex items-center justify-center gap-2 mb-3">
-            <Layers className="h-4 w-4" style={{ color: '#a78bfa' }} />
-            <span className="text-xs text-slate-500 uppercase tracking-widest font-medium">Contas & Vagas</span>
+            <Layers className="h-4 w-4" style={{ color: '#14b8a6' }} />
+            <span className="text-xs text-slate-500 uppercase tracking-widest font-medium">Contas & Telas</span>
           </div>
           <h1 className="text-2xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}>Contas</h1>
           <p className="text-slate-500 text-sm">
-            {metricas.totalContas} contas · {metricas.vagasLivres} vagas livres de {metricas.vagasTotais}
-          </p>
-          <p className="mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-medium"
-             style={{ background: dataSource === 'supabase' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: dataSource === 'supabase' ? '#4ade80' : '#fbbf24' }}>
-            Fonte: {dataSource === 'supabase' ? 'Supabase' : 'Mock'}
+            {metricas.totalContas} grupos úteis · {metricas.vagasLivres} telas livres de {metricas.vagasTotais}
           </p>
         </div>
 
         {/* KPIs */}
         <div className="flex items-center gap-8 mb-8">
           {[
-            { label: 'Contas', value: metricas.totalContas, color: '#a78bfa' },
-            { label: 'Com vaga', value: metricas.contasComVaga, color: '#22c55e' },
+            { label: 'Contas', value: metricas.totalContas, color: '#14b8a6' },
+            { label: 'Com tela', value: metricas.contasComVaga, color: '#22c55e' },
             { label: 'Cheias', value: metricas.contasCompletas, color: '#f59e0b' },
-            { label: 'Vagas livres', value: metricas.vagasLivres, color: '#60a5fa' },
+            { label: 'Telas livres', value: metricas.vagasLivres, color: '#60a5fa' },
           ].map(({ label, value, color }) => (
             <div key={label} className="text-center">
               <p className="text-xl font-bold" style={{ color, fontFamily: 'var(--font-display)' }}>{value}</p>
@@ -439,16 +477,15 @@ export function ContasPage() {
           </button>
         </div>
 
-        {/* Lista - 2 colunas */}
-        <div className="w-full max-w-4xl">
+        {/* Lista */}
+        <div className="w-full max-w-2xl space-y-3">
           {contasOrdenadas.length === 0 ? (
             <div className="rounded-xl p-12 text-center" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
               <Layers className="h-10 w-10 mx-auto mb-3" style={{ color: '#1e293b' }} />
               <p className="text-slate-500 text-sm">Nenhuma conta encontrada</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-            {contasOrdenadas.map((conta) => {
+            contasOrdenadas.map((conta) => {
               const temVagaLivre = conta.clientesVinculados.length < conta.vagasTotal
               return (
                 <AccountGroupCard
@@ -459,8 +496,7 @@ export function ContasPage() {
                   onCredenciais={() => setCredenciais(conta)}
                 />
               )
-            })}
-            </div>
+            })
           )}
         </div>
       </div>

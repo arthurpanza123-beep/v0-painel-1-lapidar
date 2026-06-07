@@ -1,16 +1,3 @@
-/**
- * lib/services/operational-window.ts
- *
- * Utilidades de janela de tempo (fuso da operação) e filtro de "ruído"
- * operacional — leads/testes sintéticos de QA que NÃO devem aparecer
- * nas métricas nem nas listas (pipeline, testes, dashboard).
- *
- * O filtro de nomes de QA é configurável por variável de ambiente
- * OPERATIONAL_NOISE_NAMES (lista separada por vírgula), com um fallback
- * embutido. Assim dá pra ajustar sem mexer no código quando entrar um
- * lead real com um desses nomes.
- */
-
 const OPERATION_TIME_ZONE = 'America/Sao_Paulo'
 
 export function startOfTodayInOperationTZ(now = new Date()): Date {
@@ -41,33 +28,8 @@ export function operationWindows(now = new Date()) {
   }
 }
 
-// ─── Filtro de ruído operacional ─────────────────────────────────────────────
-
-// Padrões "estruturais" de QA/automação que nunca são clientes reais.
-const STRUCTURAL_NOISE =
-  /worker|codex|mock|teste e2e|e2e|reject|tempor[aá]rio|temporary|operador final|recaptura|real xcloud|real blessed|real playsim|teste segunda tela|teste renovacao|teste renovação|teste ativa[cç][aã]o|teste expire idempotente|idempotente/i
-
-// Nomes de teste/QA configuráveis. Edite OPERATIONAL_NOISE_NAMES no ambiente
-// para incluir/remover nomes sem deploy de código.
-const FALLBACK_NOISE_NAMES = ['arthur', 'cristian', 'robson']
-
-function configuredNoiseNames(): string[] {
-  const raw = process.env.OPERATIONAL_NOISE_NAMES
-  if (!raw) return FALLBACK_NOISE_NAMES
-  return raw
-    .split(',')
-    .map((name) => name.trim().toLowerCase())
-    .filter(Boolean)
-}
-
 export function isOperationalNoise(value: unknown): boolean {
-  const text = String(value || '').toLowerCase().trim()
-  if (!text) return false
-  if (STRUCTURAL_NOISE.test(text)) return true
-  // Compara por palavra para não esconder, ex., "Arthurina" sem querer.
-  const tokens = text.split(/[^a-zà-ú0-9]+/i).filter(Boolean)
-  const noiseNames = configuredNoiseNames()
-  return tokens.some((token) => noiseNames.includes(token))
+  return /worker|codex|mock|teste e2e|e2e|reject|tempor[aá]rio|temporary|teste segunda tela arthur|teste renovacao arthur|teste ativa[cç][aã]o blessed arthur|teste expire idempotente/i.test(String(value || ''))
 }
 
 export function isoPlusMinutes(minutes: number, now = new Date()): string {

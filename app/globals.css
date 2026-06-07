@@ -99,6 +99,8 @@
   html, body {
     background-color: #0c0e14;
     color: #e2e8f0;
+    overflow-x: hidden;
+    width: 100%;
   }
   body {
     @apply bg-background text-foreground;
@@ -106,10 +108,48 @@
   }
   html {
     @apply font-sans;
+    overflow-x: hidden;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     @apply font-semibold tracking-tight;
+  }
+}
+
+@media (max-width: 767px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    overscroll-behavior-x: none;
+  }
+
+  /* ---- Otimizacao de desempenho para celulares fracos ---- */
+
+  /* backdrop-filter: blur e o efeito mais caro em GPU mobile.
+     Trocamos por fundo solido opaco mantendo o visual escuro. */
+  [style*="backdrop-filter"],
+  [style*="backdropFilter"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Textura de ruido SVG: custo de pintura desnecessario no mobile */
+  .noise::before {
+    display: none !important;
+  }
+}
+
+/* Respeita usuarios que pedem menos movimento (acessibilidade + bateria) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -203,10 +243,4 @@
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(59,130,246,0.5), transparent);
   border-radius: 999px;
-}
-
-/* Codex chat - typing dots */
-@keyframes codexDot {
-  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-2px); }
 }

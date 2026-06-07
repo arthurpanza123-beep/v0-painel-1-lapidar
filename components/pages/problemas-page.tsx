@@ -1,24 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m as motion, AnimatePresence } from 'framer-motion'
 import {
-  AlertTriangle, CheckCircle2, Terminal, ChevronRight, X, Clock,
-  Plus, Copy, Save, Lightbulb, Search
+  AlertTriangle, CheckCircle2, Cpu, Terminal, ChevronRight, X, Send, Clock,
 } from 'lucide-react'
 import {
   MOCK_PROBLEMAS,
   TIPOS_PROBLEMA,
   type Problema,
   type StatusProblema,
-  type TipoProblema,
 } from '@/lib/mock-data'
 import { useToast } from '@/components/ui/toast'
 
 const STATUS: Record<StatusProblema, { label: string; color: string; tag: string }> = {
-  aberto: { label: 'Aberto', color: '#ef4444', tag: 'ABERTO' },
-  em_analise: { label: 'Em analise', color: '#f59e0b', tag: 'ANALISE' },
-  resolvido: { label: 'Resolvido', color: '#22c55e', tag: 'OK' },
+  aberto: { label: 'Aberto', color: '#ef4444', tag: 'OPEN' },
+  em_analise: { label: 'Em analise', color: '#f59e0b', tag: 'PROC' },
+  resolvido: { label: 'Resolvido', color: '#22c55e', tag: 'DONE' },
 }
 
 // Severidade derivada do tipo de problema
@@ -30,16 +28,15 @@ function severidade(tipo: string): { label: string; color: string } {
   return { label: 'Baixa', color: '#60a5fa' }
 }
 
-// ——— Linha de problema ———
-function ProblemaRow({
-  problema, onExpand, expanded, onResolver, onGerarPrompt, onSalvarConhecimento,
+// ——— Linha de evento tecnico estilo terminal ———
+function EventoRow({
+  problema, onExpand, expanded, onResolver, onCodex,
 }: {
   problema: Problema
   onExpand: () => void
   expanded: boolean
   onResolver: () => void
-  onGerarPrompt: () => void
-  onSalvarConhecimento: () => void
+  onCodex: () => void
 }) {
   const cfg = STATUS[problema.status]
   const sev = severidade(problema.tipo)
@@ -48,7 +45,7 @@ function ProblemaRow({
 
   return (
     <div
-      className="transition-colors"
+      className="font-mono transition-colors"
       style={{ borderBottom: '1px solid var(--border)', opacity: resolvido ? 0.55 : 1 }}
     >
       <button
@@ -59,9 +56,9 @@ function ProblemaRow({
           className="h-3.5 w-3.5 text-slate-600 shrink-0 transition-transform"
           style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}
         />
-        <span className="text-[11px] text-slate-600 tabular-nums shrink-0 w-14">{problema.criadoEm.split(' ')[1] ?? problema.criadoEm}</span>
+        <span className="text-[11px] text-slate-600 tabular-nums shrink-0 w-12">{problema.criadoEm.split(' ')[1] ?? problema.criadoEm}</span>
         <span
-          className="text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded w-14 text-center"
+          className="text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded w-12 text-center"
           style={{ color: cfg.color, background: `${cfg.color}12` }}
         >
           {cfg.tag}
@@ -84,9 +81,9 @@ function ProblemaRow({
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 pl-[5rem]">
+            <div className="px-4 pb-4 pl-[4.5rem]">
               <div className="rounded-lg p-3 mb-3 text-xs leading-relaxed" style={{ background: 'rgba(0,0,0,0.3)', color: '#94a3b8' }}>
-                <span className="text-slate-600">Descricao:</span> {problema.descricao}
+                <span className="text-slate-600">$ erro_relatado:</span> {problema.descricao}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-[11px]">
                 <KV label="cliente" value={problema.cliente} />
@@ -96,20 +93,13 @@ function ProblemaRow({
                 <KV label="severidade" value={sev.label} color={sev.color} />
                 <KV label="status" value={cfg.label} color={cfg.color} />
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={onGerarPrompt}
+                  onClick={onCodex}
                   className="h-8 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5"
-                  style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.2)' }}
+                  style={{ background: 'rgba(20,184,166,0.1)', color: '#14b8a6', border: '1px solid rgba(20,184,166,0.2)' }}
                 >
-                  <Terminal className="h-3.5 w-3.5" /> Gerar prompt para Codex
-                </button>
-                <button
-                  onClick={onSalvarConhecimento}
-                  className="h-8 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5"
-                  style={{ background: 'rgba(245,158,11,0.1)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.2)' }}
-                >
-                  <Lightbulb className="h-3.5 w-3.5" /> Salvar conhecimento
+                  <Cpu className="h-3.5 w-3.5" /> Enviar para Codex
                 </button>
                 {!resolvido && (
                   <button
@@ -138,227 +128,49 @@ function KV({ label, value, color }: { label: string; value: string; color?: str
   )
 }
 
-// ——— Modal Novo Problema ———
-function NovoProblemaModal({
-  onClose, onSave,
-}: {
-  onClose: () => void
-  onSave: (problema: Omit<Problema, 'id' | 'criadoEm' | 'status'>) => void
-}) {
-  const [cliente, setCliente] = useState('')
-  const [telefone, setTelefone] = useState('')
-  const [app, setApp] = useState('')
-  const [servidor, setServidor] = useState('')
-  const [tipo, setTipo] = useState<TipoProblema>('outro')
-  const [descricao, setDescricao] = useState('')
-  const [solucao, setSolucao] = useState('')
-
-  const handleSave = () => {
-    if (!cliente || !descricao) return
-    onSave({ cliente, telefone, app, servidor, tipo, descricao })
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(7,10,18,0.8)', backdropFilter: 'blur(8px)' }}
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-        className="w-full max-w-lg rounded-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
-        style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>Novo problema</h3>
-              <p className="text-xs text-slate-500">Registrar ocorrencia</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-white">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">Cliente</label>
-              <input
-                value={cliente}
-                onChange={(e) => setCliente(e.target.value)}
-                placeholder="Nome do cliente"
-                className="w-full h-10 px-3 rounded-lg text-sm text-white placeholder:text-slate-600 outline-none"
-                style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
-              />
-            </div>
-            <div>
-              <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">Telefone</label>
-              <input
-                value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
-                placeholder="(00) 00000-0000"
-                className="w-full h-10 px-3 rounded-lg text-sm text-white placeholder:text-slate-600 outline-none"
-                style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">App</label>
-              <input
-                value={app}
-                onChange={(e) => setApp(e.target.value)}
-                placeholder="Ex: XCloud, Blessed..."
-                className="w-full h-10 px-3 rounded-lg text-sm text-white placeholder:text-slate-600 outline-none"
-                style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
-              />
-            </div>
-            <div>
-              <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">Servidor</label>
-              <input
-                value={servidor}
-                onChange={(e) => setServidor(e.target.value)}
-                placeholder="Ex: Yellow Box, Ninety..."
-                className="w-full h-10 px-3 rounded-lg text-sm text-white placeholder:text-slate-600 outline-none"
-                style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">Tipo de problema</label>
-            <select
-              value={tipo}
-              onChange={(e) => setTipo(e.target.value as TipoProblema)}
-              className="w-full h-10 px-3 rounded-lg text-sm text-white outline-none appearance-none"
-              style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
-            >
-              {TIPOS_PROBLEMA.map(t => (
-                <option key={t.id} value={t.id}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">O que aconteceu?</label>
-            <textarea
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              rows={3}
-              placeholder="Descreva o problema..."
-              className="w-full p-3 rounded-lg text-sm text-white placeholder:text-slate-600 outline-none resize-none"
-              style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">Solucao aplicada (opcional)</label>
-            <textarea
-              value={solucao}
-              onChange={(e) => setSolucao(e.target.value)}
-              rows={2}
-              placeholder="Se ja aplicou alguma solucao..."
-              className="w-full p-3 rounded-lg text-sm text-white placeholder:text-slate-600 outline-none resize-none"
-              style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
-            />
-          </div>
-        </div>
-
-        <div className="p-5 flex gap-2" style={{ borderTop: '1px solid var(--border)' }}>
-          <button
-            onClick={handleSave}
-            disabled={!cliente || !descricao}
-            className="flex-1 h-10 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-            style={{ background: '#ef4444', color: '#fff' }}
-          >
-            <Save className="h-4 w-4" /> Registrar problema
-          </button>
-          <button onClick={onClose} className="h-10 px-4 rounded-xl text-sm font-medium" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: '#94a3b8' }}>
-            Cancelar
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  )
-}
-
-// ——— Modal Gerar Prompt Codex ———
-function CodexPromptModal({
-  problema, onClose,
+// ——— Modal Codex ———
+function CodexModal({
+  problema, onClose, onSend,
 }: {
   problema: Problema
   onClose: () => void
+  onSend: (obs: string) => void
 }) {
-  const { addToast } = useToast()
   const [obs, setObs] = useState('')
+  const [phase, setPhase] = useState<'compose' | 'review' | 'running' | 'done'>('compose')
+  const [runStep, setRunStep] = useState(0)
   const sev = severidade(problema.tipo)
   const tipoLabel = TIPOS_PROBLEMA.find((t) => t.id === problema.tipo)?.label || problema.tipo
 
-  const prompt = `Continuar trabalhando no projeto existente:
+  const contexto = `cliente: ${problema.cliente}
+telefone: ${problema.telefone}
+app: ${problema.app}
+servidor: ${problema.servidor}
+erro: ${tipoLabel} — ${problema.descricao}
+severidade: ${sev.label}
+data/hora: ${problema.criadoEm}${obs ? `\nobservacao: ${obs}` : ''}`
 
-https://github.com/arthurpanza123-beep/v0-painel-1-lapidar
+  const sugestao = [
+    `Entendimento: analisar ${tipoLabel.toLowerCase()} para ${problema.cliente} no app ${problema.app}.`,
+    `Prioridade sugerida: ${sev.label}.`,
+    'Acao proposta: abrir uma execucao controlada com contexto da tela, preservar envio manual e registrar o resultado antes de qualquer mudanca operacional.',
+  ]
 
-Esse é o projeto de lapidação do Painel 1 da Central Play Plus.
+  const runLabels = ['Codex analisando', 'Codex preparando alteração', 'Codex executando', 'Concluído']
 
-NÃO recriar do zero.
-NÃO fazer deploy.
-NÃO mexer no Painel 2.
-NÃO criar WhatsApp/Evolution aqui.
-NÃO voltar backend para mock.
-NÃO remover chamadas reais.
-NÃO trocar \`/api/tests/create\` por \`/api/tests/create-mock\`.
-
-==================================================
-PROBLEMA REPORTADO
-==================================================
-
-Cliente: ${problema.cliente}
-Telefone: ${problema.telefone}
-App: ${problema.app}
-Servidor: ${problema.servidor}
-Tipo: ${tipoLabel}
-Severidade: ${sev.label}
-Data/Hora: ${problema.criadoEm}
-
-Descricao do problema:
-${problema.descricao}
-
-${obs ? `Observacao adicional do operador:\n${obs}` : ''}
-
-==================================================
-REGRAS DE SEGURANCA
-==================================================
-
-- Não enviar WhatsApp pelo Painel 1 (isso é Painel 2)
-- Teste não ocupa tela
-- Cliente pago ocupa tela somente ao ativar
-- Não remover chamadas reais
-- Não mexer em .env ou arquivos sensíveis
-
-==================================================
-O QUE VERIFICAR
-==================================================
-
-1. Verificar logs relacionados ao cliente
-2. Verificar se o problema é de frontend ou backend
-3. Verificar se há erro na integração com o painel ${problema.servidor}
-4. Propor solução que não quebre outras funcionalidades
-
-==================================================`
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(prompt)
-    addToast('success', 'Prompt copiado para o Codex!')
-    onClose()
-  }
+  useEffect(() => {
+    if (phase !== 'running') return
+    setRunStep(0)
+    const timers = runLabels.map((_, index) => setTimeout(() => setRunStep(index), index * 850))
+    const done = setTimeout(() => {
+      setPhase('done')
+      setRunStep(runLabels.length - 1)
+    }, runLabels.length * 850)
+    return () => {
+      timers.forEach(clearTimeout)
+      clearTimeout(done)
+    }
+  }, [phase])
 
   return (
     <motion.div
@@ -369,18 +181,18 @@ O QUE VERIFICAR
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-        className="w-full max-w-2xl rounded-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg rounded-2xl overflow-hidden"
         style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(167,139,250,0.12)', color: '#a78bfa' }}>
-              <Terminal className="h-5 w-5" />
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(20,184,166,0.12)', color: '#14b8a6' }}>
+              <Cpu className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>Prompt para Codex</h3>
-              <p className="text-xs text-slate-500">Copie e cole no Codex para resolver</p>
+              <h3 className="text-base font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>Codex IA</h3>
+              <p className="text-xs text-slate-500">Assistente operacional com confirmação antes de executar</p>
             </div>
           </div>
           <button onClick={onClose} className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-white">
@@ -389,35 +201,58 @@ O QUE VERIFICAR
         </div>
 
         <div className="p-5 space-y-4">
+          {phase === 'compose' && (
+            <div>
+              <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">O que você quer alterar ou investigar?</label>
+              <textarea
+                autoFocus
+                value={obs}
+                onChange={(e) => setObs(e.target.value)}
+                rows={4}
+                placeholder="Ex: cliente ja reinstalou o app, problema persiste apos renovacao..."
+                className="w-full p-3 rounded-lg text-sm text-white placeholder:text-slate-600 outline-none resize-none"
+                style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
+              />
+            </div>
+          )}
+          {phase === 'review' && (
+            <div className="rounded-xl p-4" style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.2)' }}>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#5eead4' }}>Resposta do Codex</p>
+              <div className="space-y-2">
+                {sugestao.map((line) => <p key={line} className="text-sm text-slate-200">{line}</p>)}
+              </div>
+            </div>
+          )}
+          {(phase === 'running' || phase === 'done') && (
+            <div className="space-y-2">
+              {runLabels.map((label, index) => (
+                <div key={label} className="flex items-center gap-3 rounded-lg p-3" style={{ background: index <= runStep ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                  <span className="h-2 w-2 rounded-full" style={{ background: index <= runStep ? '#22c55e' : '#334155' }} />
+                  <span className="text-sm text-slate-200">{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div>
-            <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">Observacao adicional (opcional)</label>
-            <textarea
-              value={obs}
-              onChange={(e) => setObs(e.target.value)}
-              rows={2}
-              placeholder="Adicionar contexto extra para o Codex..."
-              className="w-full p-3 rounded-lg text-sm text-white placeholder:text-slate-600 outline-none resize-none"
-              style={{ background: 'var(--input)', border: '1px solid var(--border)' }}
-            />
-          </div>
-          <div>
-            <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">Prompt gerado</label>
-            <pre className="p-4 rounded-lg text-[11px] leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.3)', color: '#94a3b8', border: '1px solid var(--border)' }}>
-              {prompt}
+            <label className="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 block">Contexto que sera enviado</label>
+            <pre className="p-3 rounded-lg text-[11px] leading-relaxed font-mono whitespace-pre-wrap" style={{ background: 'rgba(0,0,0,0.3)', color: '#94a3b8', border: '1px solid var(--border)' }}>
+              {contexto}
             </pre>
           </div>
         </div>
 
         <div className="p-5 flex gap-2" style={{ borderTop: '1px solid var(--border)' }}>
-          <button
-            onClick={handleCopy}
+          {phase === 'compose' && <button
+            onClick={() => setPhase('review')}
             className="flex-1 h-10 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-            style={{ background: '#a78bfa', color: '#1a0b2e' }}
+            style={{ background: '#14b8a6', color: '#04201c' }}
           >
-            <Copy className="h-4 w-4" /> Copiar prompt
-          </button>
+            <Send className="h-4 w-4" /> Analisar com Codex
+          </button>}
+          {phase === 'review' && <button onClick={() => setPhase('running')} className="flex-1 h-10 rounded-xl text-sm font-semibold" style={{ background: '#22c55e', color: '#052e16' }}>Confirmar execução</button>}
+          {phase === 'done' && <button onClick={() => onSend(obs)} className="flex-1 h-10 rounded-xl text-sm font-semibold" style={{ background: '#22c55e', color: '#052e16' }}>Finalizar</button>}
           <button onClick={onClose} className="h-10 px-4 rounded-xl text-sm font-medium" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: '#94a3b8' }}>
-            Fechar
+            Cancelar
           </button>
         </div>
       </motion.div>
@@ -428,12 +263,10 @@ O QUE VERIFICAR
 // ——— Page ———
 export function ProblemasPage() {
   const [filter, setFilter] = useState<StatusProblema | 'todos'>('todos')
-  const [search, setSearch] = useState('')
   const [problemas, setProblemas] = useState(MOCK_PROBLEMAS)
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [codexTarget, setCodexTarget] = useState<Problema | null>(null)
-  const [showNovoProblema, setShowNovoProblema] = useState(false)
   const { addToast } = useToast()
 
   useEffect(() => {
@@ -463,11 +296,7 @@ export function ProblemasPage() {
   }
 
   const filtrados = problemas
-    .filter((p) => {
-      const matchStatus = filter === 'todos' || p.status === filter
-      const matchSearch = !search || p.cliente.toLowerCase().includes(search.toLowerCase()) || p.descricao.toLowerCase().includes(search.toLowerCase())
-      return matchStatus && matchSearch
-    })
+    .filter((p) => filter === 'todos' || p.status === filter)
     .sort((a, b) => {
       const ordem: Record<StatusProblema, number> = { aberto: 0, em_analise: 1, resolvido: 2 }
       return ordem[a.status] - ordem[b.status]
@@ -478,34 +307,18 @@ export function ProblemasPage() {
     addToast('success', 'Problema resolvido')
   }
 
-  const handleNovoProblema = (data: Omit<Problema, 'id' | 'criadoEm' | 'status'>) => {
-    const novo: Problema = {
-      ...data,
-      id: String(Date.now()),
-      criadoEm: new Date().toLocaleString('pt-BR'),
-      status: 'aberto',
-    }
-    setProblemas(prev => [novo, ...prev])
-    setShowNovoProblema(false)
-    addToast('success', 'Problema registrado')
-  }
-
   return (
     <>
       <div className="flex-1 flex flex-col items-center px-6 py-10 min-h-screen">
         {/* Header */}
         <div className="text-center mb-8 max-w-xl">
           <div className="flex items-center justify-center gap-2 mb-3">
-            <AlertTriangle className="h-4 w-4" style={{ color: '#ef4444' }} />
-            <span className="text-xs text-slate-500 uppercase tracking-widest font-medium">Central de suporte</span>
+            <Terminal className="h-4 w-4" style={{ color: '#14b8a6' }} />
+            <span className="text-xs text-slate-500 uppercase tracking-widest font-medium">Central de suporte tecnico</span>
           </div>
           <h1 className="text-2xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}>Problemas</h1>
           <p className="text-slate-500 text-sm">
             {metricas.abertos} abertos · {metricas.emAnalise} em analise · {metricas.resolvidos} resolvidos
-          </p>
-          <p className="mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-medium"
-             style={{ background: dataSource === 'supabase' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: dataSource === 'supabase' ? '#4ade80' : '#fbbf24' }}>
-            Fonte: {dataSource === 'supabase' ? 'Supabase' : 'Mock'}
           </p>
         </div>
 
@@ -527,59 +340,37 @@ export function ProblemasPage() {
           </div>
         </div>
 
-        {/* Busca + Filtros + Novo */}
-        <div className="w-full max-w-3xl mb-6">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-              <input
-                type="text"
-                placeholder="Buscar por cliente ou descricao..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full h-10 pl-10 pr-4 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none"
-                style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-              />
-            </div>
+        {/* Filtros */}
+        <div className="flex gap-2 mb-6">
+          {[
+            { id: 'todos', label: 'Todos' },
+            { id: 'aberto', label: 'Abertos' },
+            { id: 'em_analise', label: 'Em analise' },
+            { id: 'resolvido', label: 'Resolvidos' },
+          ].map((f) => (
             <button
-              onClick={() => setShowNovoProblema(true)}
-              className="h-10 px-4 rounded-xl text-sm font-medium flex items-center gap-2 shrink-0"
-              style={{ background: 'rgba(239,68,68,0.15)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}
+              key={f.id}
+              onClick={() => setFilter(f.id as typeof filter)}
+              className="px-4 h-9 rounded-xl text-xs font-medium transition-all"
+              style={
+                filter === f.id
+                  ? { background: 'rgba(20,184,166,0.15)', border: '1px solid rgba(20,184,166,0.25)', color: '#14b8a6' }
+                  : { background: 'var(--card)', border: '1px solid var(--border)', color: '#64748b' }
+              }
             >
-              <Plus className="h-4 w-4" /> Novo problema
+              {f.label}
             </button>
-          </div>
-          <div className="flex gap-2 mt-3">
-            {[
-              { id: 'todos', label: 'Todos' },
-              { id: 'aberto', label: 'Abertos' },
-              { id: 'em_analise', label: 'Em analise' },
-              { id: 'resolvido', label: 'Resolvidos' },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id as typeof filter)}
-                className="px-3 h-8 rounded-lg text-xs font-medium transition-all"
-                style={
-                  filter === f.id
-                    ? { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }
-                    : { background: 'var(--card)', border: '1px solid var(--border)', color: '#64748b' }
-                }
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
 
-        {/* Lista de problemas */}
+        {/* Terminal de eventos */}
         <div className="w-full max-w-3xl rounded-2xl overflow-hidden" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
           {/* Barra do terminal */}
           <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(0,0,0,0.25)', borderBottom: '1px solid var(--border)' }}>
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#ef4444' }} />
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#f59e0b' }} />
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#22c55e' }} />
-            <span className="text-[11px] text-slate-500 ml-2 flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-500 font-mono ml-2 flex items-center gap-1.5">
               <Clock className="h-3 w-3" /> suporte@centralplay — {filtrados.length} ocorrencias
             </span>
           </div>
@@ -587,18 +378,17 @@ export function ProblemasPage() {
           {filtrados.length === 0 ? (
             <div className="p-12 text-center">
               <CheckCircle2 className="h-10 w-10 mx-auto mb-3" style={{ color: '#22c55e' }} />
-              <p className="text-slate-400 text-sm">Nenhuma ocorrencia encontrada</p>
+              <p className="text-slate-400 text-sm font-mono">Nenhuma ocorrencia em aberto</p>
             </div>
           ) : (
             filtrados.map((p) => (
-              <ProblemaRow
+              <EventoRow
                 key={p.id}
                 problema={p}
                 expanded={expanded === p.id}
                 onExpand={() => setExpanded(expanded === p.id ? null : p.id)}
                 onResolver={() => handleResolver(p.id)}
-                onGerarPrompt={() => setCodexTarget(p)}
-                onSalvarConhecimento={() => addToast('success', 'Conhecimento salvo localmente')}
+                onCodex={() => setCodexTarget(p)}
               />
             ))
           )}
@@ -607,18 +397,13 @@ export function ProblemasPage() {
 
       <AnimatePresence>
         {codexTarget && (
-          <CodexPromptModal
+          <CodexModal
             problema={codexTarget}
             onClose={() => setCodexTarget(null)}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showNovoProblema && (
-          <NovoProblemaModal
-            onClose={() => setShowNovoProblema(false)}
-            onSave={handleNovoProblema}
+              onSend={(_obs) => {
+                addToast('success', 'Contexto enviado ao Codex')
+                setCodexTarget(null)
+              }}
           />
         )}
       </AnimatePresence>

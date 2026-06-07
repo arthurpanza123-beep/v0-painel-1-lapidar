@@ -36,9 +36,6 @@ function getDashboardFromMock(): DashboardMetrics {
   const fin  = calcularMetricasFinanceiro()
   const pipe = calcularMetricasPipeline()
 
-  const leadsHoje = MOCK_PIPELINE.filter(l => l.etapa === 'novo_lead' || l.etapa === 'contato').length
-  const ativacoesHoje = MOCK_PIPELINE.filter(l => l.etapa === 'ativado').length
-
   return {
     // KPIs — MOCK
     active_tests:       MOCK_TESTES.filter(t => t.status === 'ativo').length,
@@ -47,9 +44,6 @@ function getDashboardFromMock(): DashboardMetrics {
     leads_in_progress:  MOCK_PIPELINE.filter(
       l => l.etapa !== 'ativado' && l.etapa !== 'renovacao'
     ).length,
-    leads_today:        leadsHoje,
-    activations_today:  ativacoesHoje,
-    open_problems:      2, // Mock fixo
 
     // Financeiro — MOCK
     available_credits:        fin.creditosDisponiveis,
@@ -62,7 +56,7 @@ function getDashboardFromMock(): DashboardMetrics {
     funnel: [
       { stage: 'novo_lead',    label: 'Leads',     count: pipe.novo_lead + pipe.contato,           color: '#3b82f6' },
       { stage: 'testando',     label: 'Testando',  count: pipe.teste_gerado + pipe.testando,        color: '#f59e0b' },
-      { stage: 'interessado',  label: 'Interesse', count: pipe.interessado,                         color: '#a78bfa' },
+      { stage: 'interessado',  label: 'Interesse', count: pipe.interessado,                         color: '#60a5fa' },
       { stage: 'pagou',        label: 'Pagaram',   count: pipe.pagou,                               color: '#22c55e' },
       { stage: 'ativado',      label: 'Ativados',  count: pipe.ativado,                             color: '#14b8a6' },
     ],
@@ -82,14 +76,49 @@ function getDashboardFromMock(): DashboardMetrics {
 // ─── SUPABASE REAL (read-only) ───────────────────────────────────────────────
 
 type CountResult = { count: number | null; error: { message?: string } | null }
+type ClientFinanceRow = { id: string; name: string | null; status: string | null }
+type RenewalFinanceRow = { client_id: string | null; plan_key: string | null; amount_cents: number | null; created_at: string | null }
 
 function getCount(result: CountResult) {
   if (result.error) throw new Error(result.error.message || 'Falha ao consultar Supabase')
   return result.count || 0
 }
 
-type ClientRow = { id: string; name: string | null; status: string | null; created_at: string | null }
-type TestRow = { id: string; client_id: string | null; status: string | null; created_at: string | null; expires_at: string | null }
+function money(cents?: number | null): number {
+  return Number(((cents || 0) / 100).toFixed(2))
+}
+
+function isTemporaryClient(client: ClientFinanceRow): boolean {
+  return isOperationalNoise(client.name)
+}
+
+function latestRenewalsByClient(renewals: RenewalFinanceRow[]) {
+  const map = new Map<string, RenewalFinanceRow>()
+  for (const renewal of renewals) {
+    const clientId = renewal.client_id || ''
+    if (!clientId) continue
+    const current = map.get(clientId)
+    if (!current || String(renewal.created_at || '') > String(current.created_at || '')) {
+      map.set(clientId, renewal)
+    }
+  }
+  return map
+}
+
+function calculateMonthlyRenewalForecast(clients: ClientFinanceRow[], renewals: RenewalFinanceRow[]) {
+  const latest = latestRenewalsByClient(renewals)
+  return clients.reduce((total, client) => {
+    if (client.status !== 'active' || isTemporaryClient(client)) return total
+    const renewal = latest.get(client.id)
+    if (String(renewal?.plan_key || '').toLowerCase() !== 'mensal') return total
+    return total + money(renewal?.amount_cents)
+  }, 0)
+}
+
+function yellowBoxOperationalCredits(): number {
+  const parsed = Number(process.env.YELLOW_BOX_CREDITS || process.env.BRASIL_YELLOW_CREDITS || 9)
+  return Number.isFinite(parsed) ? parsed : 9
+}
 
 async function getDashboardFromSupabase(): Promise<DashboardMetrics | null> {
   const db = getSupabaseServerClient()
@@ -97,36 +126,39 @@ async function getDashboardFromSupabase(): Promise<DashboardMetrics | null> {
 
   try {
     const now = new Date()
-    const nowIso = now.toISOString()
     const { todayStartIso, in30dIso, in60dIso, in90dIso } = operationWindows(now)
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const nowIso = now.toISOString()
 
     const [
-      clientsRes,
-      testsTodayRes,
+      generatedTodayRes,
       activeTestsRes,
       activeClientsRes,
-      paidTodayRes,
+      todayLeadsRes,
+      testingRes,
+      finishedTodayRes,
+      paidPipelineRes,
       revenueMonthRes,
-      renewalsRes,
       forecast30Res,
       forecast60Res,
       forecast90Res,
+      financeClientsRes,
+      financeRenewalsRes,
       creditsRes,
     ] = await Promise.all([
-      // clientes (com nome p/ filtrar ruído de QA)
-      db.from('clients').select('id,name,status,created_at'),
-      // testes gerados hoje (com nome do cliente p/ filtrar ruído)
-      db.from('tests').select('id,client_id,status,created_at,expires_at').gte('created_at', todayStartIso),
-      // testes ativos agora (válidos)
-      db.from('tests').select('id,client_id,status,created_at,expires_at').eq('status', 'active').gt('expires_at', nowIso),
+      db.from('tests').select('id', { count: 'exact', head: true }).gte('created_at', todayStartIso),
+      db.from('tests').select('id', { count: 'exact', head: true }).eq('status', 'active').gt('expires_at', nowIso),
       db.from('clients').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      db.from('clients').select('id', { count: 'exact', head: true }).eq('status', 'lead').gte('created_at', todayStartIso),
+      db.from('tests').select('id', { count: 'exact', head: true }).in('status', ['pending', 'generating', 'active']).gte('created_at', todayStartIso),
+      db.from('tests').select('id', { count: 'exact', head: true }).in('status', ['expired', 'failed', 'cancelled', 'archived']).gte('created_at', todayStartIso),
       db.from('payments').select('id', { count: 'exact', head: true }).eq('status', 'paid').gte('paid_at', todayStartIso),
       db.from('payments').select('amount_cents').eq('status', 'paid').gte('paid_at', monthStart),
-      db.from('renewals').select('client_id,plan_key,amount_cents,created_at'),
       db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', nowIso).lte('due_at', in30dIso),
       db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', nowIso).lte('due_at', in60dIso),
       db.from('renewals').select('amount_cents').not('amount_cents', 'is', null).gte('due_at', nowIso).lte('due_at', in90dIso),
+      db.from('clients').select('id,name,status'),
+      db.from('renewals').select('client_id,plan_key,amount_cents,created_at'),
       db
         .from('panel_credit_snapshots')
         .select('id, credits_available, estimated_activations, status, checked_at, panels(name)')
@@ -134,60 +166,29 @@ async function getDashboardFromSupabase(): Promise<DashboardMetrics | null> {
         .limit(12),
     ])
 
-    if (
-      clientsRes.error || testsTodayRes.error || activeTestsRes.error ||
-      revenueMonthRes.error || renewalsRes.error ||
-      forecast30Res.error || forecast60Res.error || forecast90Res.error || creditsRes.error
-    ) {
-      throw new Error('Falha ao consultar métricas do dashboard')
-    }
-
+    const generatedToday = getCount(generatedTodayRes)
+    const activeTests = getCount(activeTestsRes)
     const activeClients = getCount(activeClientsRes)
-    const paidToday = getCount(paidTodayRes)
+    const leads = getCount(todayLeadsRes)
+    const testing = getCount(testingRes)
+    const finished = getCount(finishedTodayRes)
+    const paidPipeline = getCount(paidPipelineRes)
 
-    // Mapa de clientes p/ filtrar ruído de QA (nomes sintéticos)
-    const clients = (clientsRes.data || []) as ClientRow[]
-    const clientById = new Map(clients.map((c) => [c.id, c]))
-    const isRealTest = (test: TestRow) => {
-      const client = test.client_id ? clientById.get(test.client_id) : undefined
-      return !isOperationalNoise(client?.name)
+    if (revenueMonthRes.error || forecast30Res.error || forecast60Res.error || forecast90Res.error || financeClientsRes.error || financeRenewalsRes.error || creditsRes.error) {
+      throw new Error(
+        revenueMonthRes.error?.message ||
+        forecast30Res.error?.message ||
+        forecast60Res.error?.message ||
+        forecast90Res.error?.message ||
+        financeClientsRes.error?.message ||
+        financeRenewalsRes.error?.message ||
+        creditsRes.error?.message ||
+        'Falha ao consultar métricas'
+      )
     }
-
-    // Gerados hoje (sem ruído)
-    const generatedToday = ((testsTodayRes.data || []) as TestRow[]).filter(isRealTest)
-    const generatedTodayCount = generatedToday.length
-
-    // Testes ativos agora (sem ruído)
-    const activeTestsCount = ((activeTestsRes.data || []) as TestRow[]).filter(isRealTest).length
-
-    // Funil do dia (todos derivados dos testes reais de hoje)
-    const testingToday = generatedToday.filter((t) => ['pending', 'generating', 'active'].includes(String(t.status))).length
-    const finishedToday = generatedToday.filter((t) => ['expired', 'failed', 'cancelled', 'archived', 'converted'].includes(String(t.status))).length
-
-    // Leads reais criados hoje (status lead, sem ruído)
-    const leadsToday = clients.filter(
-      (c) => c.status === 'lead' && String(c.created_at || '') >= todayStartIso && !isOperationalNoise(c.name)
-    ).length
-
-    const totalOperacaoHoje = leadsToday + generatedTodayCount + paidToday
 
     const sumCents = (rows: { amount_cents: number | null }[] | null) =>
       (rows || []).reduce((acc, row) => acc + (row.amount_cents || 0), 0) / 100
-
-    // Renovação mensal prevista (clientes ativos reais, plano mensal)
-    const renewals = (renewalsRes.data || []) as { client_id: string | null; plan_key: string | null; amount_cents: number | null; created_at: string | null }[]
-    const latestRenewal = new Map<string, typeof renewals[number]>()
-    for (const r of renewals) {
-      if (!r.client_id) continue
-      const cur = latestRenewal.get(r.client_id)
-      if (!cur || String(r.created_at || '') > String(cur.created_at || '')) latestRenewal.set(r.client_id, r)
-    }
-    const monthlyRenewalForecast = clients.reduce((total, c) => {
-      if (c.status !== 'active' || isOperationalNoise(c.name)) return total
-      const r = latestRenewal.get(c.id)
-      if (String(r?.plan_key || '').toLowerCase() !== 'mensal') return total
-      return total + (r?.amount_cents || 0) / 100
-    }, 0)
 
     const rawCredits = creditsRes.data || []
     const seenPanels = new Set<string>()
@@ -208,35 +209,39 @@ async function getDashboardFromSupabase(): Promise<DashboardMetrics | null> {
         return true
       })
 
-    const availableCredits = panelCredits.reduce((acc, row) => acc + row.balance, 0)
+    if (!panelCredits.length) {
+      panelCredits.push({
+        id: 'brasil_yellow_operational_balance',
+        panel: 'Brasil / Yellow Box',
+        balance: yellowBoxOperationalCredits(),
+        low_balance: yellowBoxOperationalCredits() <= 5,
+      })
+    }
 
-    // Projeções: 30d = renovação mensal; 60d/90d progressivo (× 1.6)
-    const due30 = sumCents(forecast30Res.data)
-    const forecast30 = monthlyRenewalForecast || due30
-    const forecast60 = forecast30 * 1.6
-    const forecast90 = forecast60 * 1.6
+    const availableCredits = panelCredits.reduce((acc, row) => acc + row.balance, 0)
+    const monthlyRenewalForecast = calculateMonthlyRenewalForecast(
+      (financeClientsRes.data || []) as ClientFinanceRow[],
+      (financeRenewalsRes.data || []) as RenewalFinanceRow[]
+    )
 
     return {
-      active_tests: activeTestsCount,
-      total_tests: generatedTodayCount,
+      active_tests: activeTests,
+      total_tests: generatedToday,
       active_clients: activeClients,
-      leads_in_progress: totalOperacaoHoje,
-      leads_today: leadsToday,
-      activations_today: paidToday,
-      open_problems: 0,
+      leads_in_progress: leads + testing + finished + paidPipeline,
       available_credits: availableCredits,
       revenue_current_month: sumCents(revenueMonthRes.data),
       monthly_renewal_forecast: monthlyRenewalForecast,
-      revenue_due_30d: due30,
-      revenue_forecast_30d: forecast30,
-      revenue_forecast_60d: forecast60,
-      revenue_forecast_90d: forecast90,
+      revenue_due_30d: sumCents(forecast30Res.data),
+      revenue_forecast_30d: sumCents(forecast30Res.data),
+      revenue_forecast_60d: sumCents(forecast60Res.data),
+      revenue_forecast_90d: sumCents(forecast90Res.data),
       funnel: [
-        { stage: 'novo_lead', label: 'Lead', count: leadsToday, color: '#3b82f6' },
-        { stage: 'teste_gerado', label: 'Testando', count: testingToday, color: '#f59e0b' },
-        { stage: 'testando', label: 'Finalizou', count: finishedToday, color: '#eab308' },
-        { stage: 'pagou', label: 'Pagou', count: paidToday, color: '#22c55e' },
-        { stage: 'ativado', label: 'Ativos', count: activeClients, color: '#14b8a6' },
+        { stage: 'novo_lead', label: 'Lead', count: leads, color: '#3b82f6' },
+        { stage: 'contato', label: 'Baixando app', count: 0, color: '#38bdf8' },
+        { stage: 'teste_gerado', label: 'Testando', count: testing, color: '#f59e0b' },
+        { stage: 'testando', label: 'Finalizou', count: finished, color: '#eab308' },
+        { stage: 'pagou', label: 'Pagou', count: paidPipeline, color: '#22c55e' },
       ],
       panel_credits: panelCredits,
       data_source: 'supabase',

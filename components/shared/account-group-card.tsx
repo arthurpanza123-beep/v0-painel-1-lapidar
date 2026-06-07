@@ -1,26 +1,25 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import { Layers, Eye, Calendar, Tv2, UserPlus, Sparkles } from 'lucide-react'
+import { m as motion } from 'framer-motion'
+import { Layers, Eye, Calendar, Tv2, UserPlus } from 'lucide-react'
 import type { Conta } from '@/lib/mock-data'
 
-// Card de grupo de conta com vagas (ocupacao 1/2, 2/2, vaga disponivel).
+// Card de grupo de conta com telas (ocupacao 1/2, 2/2, tela disponivel).
 export function AccountGroupCard({
   conta,
+  destacar = false,
   onAtivar,
   onCredenciais,
-  destacar = false,
 }: {
   conta: Conta
+  destacar?: boolean
   onAtivar: (index: number) => void
   onCredenciais: () => void
-  destacar?: boolean
 }) {
   const ocupadas = conta.clientesVinculados.length
   const livres = conta.vagasTotal - ocupadas
   const cheia = livres <= 0
-  // Conta cheia = vermelho; com vaga livre = verde.
-  const cor = cheia ? '#ef4444' : '#22c55e'
+  const cor = cheia ? '#f59e0b' : '#22c55e'
 
   const vagas = Array.from({ length: conta.vagasTotal }, (_, i) => conta.clientesVinculados[i] ?? null)
 
@@ -29,23 +28,13 @@ export function AccountGroupCard({
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl p-5 relative overflow-hidden"
-      style={{ 
-        background: destacar ? 'rgba(34,197,94,0.04)' : 'var(--card)', 
-        border: destacar ? '1px solid rgba(34,197,94,0.25)' : '1px solid var(--border)' 
+      className="rounded-2xl p-5"
+      style={{
+        background: destacar ? 'linear-gradient(180deg, rgba(34,197,94,0.08), var(--card))' : 'var(--card)',
+        border: destacar ? '1px solid rgba(34,197,94,0.22)' : '1px solid var(--border)',
+        boxShadow: destacar ? '0 0 0 1px rgba(34,197,94,0.06), 0 12px 36px rgba(34,197,94,0.08)' : undefined,
       }}
     >
-      {/* Badge de destaque para vaga livre */}
-      {livres > 0 && destacar && (
-        <div 
-          className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold"
-          style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}
-        >
-          <Sparkles className="h-3 w-3" />
-          Vaga livre - economize credito
-        </div>
-      )}
-
       {/* Cabecalho */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3 min-w-0">
@@ -64,8 +53,13 @@ export function AccountGroupCard({
                 className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0"
                 style={{ background: `${cor}1a`, color: cor }}
               >
-                {cheia ? 'Conta cheia' : `${livres} vaga${livres > 1 ? 's' : ''} livre`}
+                {cheia ? `${ocupadas}/${conta.vagasTotal} Cheia` : `${livres} tela${livres > 1 ? 's' : ''}`}
               </span>
+              {destacar && !cheia && (
+                <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-emerald-300" style={{ background: 'rgba(34,197,94,0.12)' }}>
+                  Livre
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
               <Tv2 className="h-3 w-3" /> {conta.app} · {conta.servidor}
@@ -92,7 +86,7 @@ export function AccountGroupCard({
         </span>
       </div>
 
-      {/* Vagas */}
+      {/* Telas */}
       <div className="space-y-2">
         {vagas.map((vinc, i) =>
           vinc ? (
@@ -118,22 +112,17 @@ export function AccountGroupCard({
               key={i}
               onClick={() => onAtivar(i)}
               className="w-full flex items-center gap-3 rounded-lg p-2.5 transition-all hover:brightness-125 group"
-              style={{ 
-                background: destacar ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.015)', 
-                border: destacar ? '1px dashed rgba(34,197,94,0.3)' : '1px dashed var(--border)' 
-              }}
+              style={{ background: 'rgba(255,255,255,0.015)', border: '1px dashed var(--border)' }}
             >
               <div
                 className="h-7 w-7 rounded-full flex items-center justify-center shrink-0"
-                style={{ background: destacar ? 'rgba(34,197,94,0.15)' : 'rgba(96,165,250,0.12)', color: destacar ? '#4ade80' : '#60a5fa' }}
+                style={{ background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}
               >
                 <UserPlus className="h-3.5 w-3.5" />
               </div>
               <div className="text-left">
-                <span className="text-xs font-medium block" style={{ color: destacar ? '#4ade80' : '#60a5fa' }}>
-                  {destacar ? 'Vaga livre - economize credito' : 'Ativar cliente nesta vaga'}
-                </span>
-                <span className="text-[10px] text-slate-600">Vaga {i + 1} disponivel</span>
+                <span className="text-xs font-medium block" style={{ color: '#60a5fa' }}>Usar esta tela</span>
+                <span className="text-[10px] text-slate-600">Tela {i + 1} disponivel</span>
               </div>
             </button>
           )

@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { m as motion } from 'framer-motion'
 import {
   Users, Search, Phone, Package, Server, Calendar, DollarSign,
-  RefreshCw, Tv2, X, Key, Sparkles, Edit3
+  RefreshCw, Eye, Key, Tv2, Sparkles, X, Loader2,
 } from 'lucide-react'
 import {
   MOCK_CLIENTES,
@@ -14,8 +14,49 @@ import {
 import { StatusBadge } from '@/components/shared/status-badge'
 import { ActionMenu, type ActionItem } from '@/components/shared/action-menu'
 import { ClientDrawer } from '@/components/shared/client-drawer'
-import { CredentialsModal } from '@/components/shared/credentials-modal'
 import { useToast } from '@/components/ui/toast'
+
+const PLAN_OPTIONS = [
+  { key: 'mensal', label: 'Mensal', months: 1 },
+  { key: 'trimestral', label: 'Trimestral', months: 3 },
+  { key: 'semestral', label: 'Semestral', months: 6 },
+  { key: 'anual', label: 'Anual', months: 12 },
+]
+
+function normalizePlan(value: string) {
+  const key = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+  return PLAN_OPTIONS.find((plan) => key.includes(plan.key))?.key || 'mensal'
+}
+
+function parseBrDate(value: string) {
+  const [day, month, year] = value.split('/').map(Number)
+  if (!day || !month || !year) return new Date()
+  return new Date(year, month - 1, day, 12, 0, 0)
+}
+
+function addMonths(base: Date, months: number) {
+  const next = new Date(base)
+  const originalDate = next.getDate()
+  next.setMonth(next.getMonth() + months)
+  if (next.getDate() < originalDate) next.setDate(0)
+  return next
+}
+
+function toInputDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatBrFromInput(value: string) {
+  const [year, month, day] = value.split('-')
+  if (!year || !month || !day) return value
+  return `${day}/${month}/${year}`
+}
 
 function diasParaVencer(vencimento: string): number {
   const [d, m, a] = vencimento.split('/').map(Number)
@@ -96,38 +137,207 @@ function ClienteCard({
   )
 }
 
+function RenovarModal({
+  cliente,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  cliente: Cliente
+  busy: boolean
+  onClose: () => void
+  onConfirm: (payload: { plan: string; amountCents: number; dueAt: string; note: string }) => void
+}) {
+  const initialPlan = normalizePlan(cliente.plano)
+  const [plan, setPlan] = useState(initialPlan)
+  const [amount, setAmount] = useState(String(cliente.valor || 20).replace('.', ','))
+  const [note, setNote] = useState('')
+
+  const predictedDueAt = useMemo(() => {
+    const option = PLAN_OPTIONS.find((item) => item.key === plan) || PLAN_OPTIONS[0]
+    return toInputDate(addMonths(parseBrDate(cliente.vencimento), option.months))
+  }, [cliente.vencimento, plan])
+
+  const amountNumber = Number(amount.replace(',', '.'))
+  const canSubmit = Number.isFinite(amountNumber) && amountNumber > 0 && !busy
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4" style={{ background: 'rgba(5,7,12,0.72)' }}>
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        className="w-full max-w-md rounded-2xl overflow-hidden"
+        style={{ background: 'var(--background)', border: '1px solid var(--border)' }}
+      >
+        <div className="flex items-start justify-between gap-4 p-5" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="min-w-0">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest">Renovacao</p>
+            <h2 className="mt-1 text-lg font-semibold text-white truncate">{cliente.nome}</h2>
+            <p className="text-xs text-slate-500 truncate">{cliente.app} · {cliente.servidor}</p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="h-9 w-9 rounded-lg flex items-center justify-center text-slate-500 disabled:opacity-50"
+            style={{ background: 'rgba(255,255,255,0.04)' }}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider">Plano atual</p>
+              <p className="text-sm font-semibold text-white mt-1">{cliente.plano}</p>
+            </div>
+            <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider">Vencimento atual</p>
+              <p className="text-sm font-semibold text-white mt-1">{cliente.vencimento}</p>
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider">Plano</span>
+            <select
+              value={plan}
+              onChange={(event) => setPlan(event.target.value)}
+              disabled={busy}
+              className="mt-2 w-full h-11 rounded-xl px-3 text-sm text-white outline-none disabled:opacity-60"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}
+            >
+              {PLAN_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider">Valor</span>
+              <input
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                disabled={busy}
+                inputMode="decimal"
+                className="mt-2 w-full h-11 rounded-xl px-3 text-sm text-white outline-none disabled:opacity-60"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider">Novo vencimento</span>
+              <input
+                type="date"
+                value={predictedDueAt}
+                readOnly
+                className="mt-2 w-full h-11 rounded-xl px-3 text-sm text-white outline-none"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}
+              />
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider">Observacao</span>
+            <input
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              disabled={busy}
+              placeholder="Opcional"
+              className="mt-2 w-full h-11 rounded-xl px-3 text-sm text-white placeholder:text-slate-600 outline-none disabled:opacity-60"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}
+            />
+          </label>
+
+          <button
+            onClick={() => onConfirm({
+              plan,
+              amountCents: Math.round(amountNumber * 100),
+              dueAt: predictedDueAt,
+              note,
+            })}
+            disabled={!canSubmit}
+            className="w-full h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+            style={{ background: 'rgba(59,130,246,0.16)', color: '#93c5fd', border: '1px solid rgba(59,130,246,0.28)' }}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {busy ? 'Renovando...' : `Confirmar renovacao para ${formatBrFromInput(predictedDueAt)}`}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 // ——— Page ———
 export function ClientesPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusCliente | 'todos'>('todos')
   const [selecionado, setSelecionado] = useState<Cliente | null>(null)
+  const [renovando, setRenovando] = useState<Cliente | null>(null)
+  const [renovandoId, setRenovandoId] = useState<string | null>(null)
   const [clientes, setClientes] = useState<Cliente[]>(MOCK_CLIENTES)
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock')
-  const [modalCredenciais, setModalCredenciais] = useState<Cliente | null>(null)
-  const [modalSegundaTela, setModalSegundaTela] = useState<Cliente | null>(null)
-  const [modalCodex, setModalCodex] = useState<Cliente | null>(null)
-  const [codexPrompt, setCodexPrompt] = useState('')
   const { addToast } = useToast()
+
+  const loadClientes = useCallback(async (alive = true) => {
+    try {
+      const res = await fetch('/api/clients', { cache: 'no-store' })
+      if (!res.ok) throw new Error('Falha ao carregar clientes')
+      const payload = await res.json()
+      if (!alive) return
+      setClientes(Array.isArray(payload.items) ? payload.items : MOCK_CLIENTES)
+      setDataSource(payload.data_source === 'supabase' ? 'supabase' : 'mock')
+    } catch {
+      if (!alive) return
+      setClientes(MOCK_CLIENTES)
+      setDataSource('mock')
+    }
+  }, [])
 
   useEffect(() => {
     let alive = true
-    async function load() {
-      try {
-        const res = await fetch('/api/clients', { cache: 'no-store' })
-        if (!res.ok) throw new Error('Falha ao carregar clientes')
-        const payload = await res.json()
-        if (!alive) return
-        setClientes(Array.isArray(payload.items) ? payload.items : MOCK_CLIENTES)
-        setDataSource(payload.data_source === 'supabase' ? 'supabase' : 'mock')
-      } catch {
-        if (!alive) return
-        setClientes(MOCK_CLIENTES)
-        setDataSource('mock')
-      }
-    }
-    load()
+    loadClientes(alive)
     return () => { alive = false }
-  }, [])
+  }, [loadClientes])
+
+  async function confirmarRenovacao(payload: { plan: string; amountCents: number; dueAt: string; note: string }) {
+    if (!renovando || renovandoId) return
+
+    const idempotencyKey = `renewal:${renovando.id}:${Date.now()}`
+    setRenovandoId(renovando.id)
+    try {
+      const response = await fetch('/api/renewals/renew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: renovando.id,
+          plan: payload.plan,
+          amount_cents: payload.amountCents,
+          due_at: payload.dueAt,
+          note: payload.note || undefined,
+          idempotency_key: idempotencyKey,
+          operator_ref: 'painel_web',
+        }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.error || 'Falha ao renovar cliente')
+      }
+
+      await loadClientes()
+      setRenovando(null)
+      addToast(
+        result?.already_processed ? 'info' : 'success',
+        result?.already_processed
+          ? 'Renovacao ja processada. Nenhum lancamento duplicado.'
+          : 'Renovacao registrada e mensagem enviada em background.'
+      )
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Falha ao renovar cliente')
+    } finally {
+      setRenovandoId(null)
+    }
+  }
 
   const filtrados = clientes.filter((c) => {
     const s = search.toLowerCase()
@@ -144,53 +354,24 @@ export function ClientesPage() {
     receita: clientes.filter((c) => c.status === 'ativo').reduce((s, c) => s + c.valor, 0),
   }
 
-  const abrirPainel2 = (c: Cliente) => {
-    window.open(`https://painel2.centralplayplus.com.br?source=painel1&client_id=${c.id}&flow=client_action`, '_blank')
-    addToast('success', 'Abrindo Painel 2...')
-  }
-
-  // Ações refinadas conforme especificação
   const buildActions = (c: Cliente): ActionItem[] => [
-    { label: 'Renovar', icon: RefreshCw, onClick: () => handleRenovar(c), color: '#60a5fa' },
-    { label: 'Playlist / Credenciais', icon: Key, onClick: () => setModalCredenciais(c), color: '#14b8a6' },
-    { label: 'Ativar segunda tela', icon: Tv2, onClick: () => setModalSegundaTela(c), color: '#f59e0b' },
-    { label: 'Codex IA', icon: Sparkles, onClick: () => setModalCodex(c), color: '#a78bfa' },
-    { label: 'Editar dados', icon: Edit3, onClick: () => setSelecionado(c), color: '#64748b' },
+    { label: renovandoId === c.id ? 'Renovando...' : 'Renovar', icon: RefreshCw, onClick: () => {
+      if (renovandoId === c.id) return
+      setRenovando(c)
+    }, color: '#60a5fa' },
+    { label: 'Playlist / Credenciais', icon: Key, onClick: () => setSelecionado(c), color: '#14b8a6' },
+    { label: 'Ativar segunda tela', icon: Tv2, onClick: () => {
+      if (c.usuario) navigator.clipboard.writeText(c.usuario)
+      const params = new URLSearchParams({ source: 'painel1', flow: 'second_screen', client_id: c.id, client_name: c.nome, app: c.app, panel: c.servidor })
+      window.open(`https://painel2.centralplayplus.com.br?${params.toString()}`, '_blank')
+      addToast('info', 'Usuario copiado e contexto enviado para Painel 2')
+    }, color: '#f59e0b' },
+    { label: 'Codex IA', icon: Sparkles, onClick: () => {
+      navigator.clipboard.writeText(`Cliente: ${c.nome}\nTelefone: ${c.telefone}\nApp: ${c.app}\nServidor: ${c.servidor}\nPlano: ${c.plano}\nVencimento: ${c.vencimento}\n\nProblema/Pergunta:`)
+      addToast('success', 'Contexto copiado para Codex IA')
+    }, color: '#14b8a6' },
+    { label: 'Ver dados', icon: Eye, onClick: () => setSelecionado(c) },
   ]
-
-  // Handler renovar
-  const handleRenovar = (c: Cliente) => {
-    addToast('success', `Renovacao de ${c.nome} iniciada`)
-    // Enviar contexto para Painel 2 enviar mensagem
-    const params = new URLSearchParams({
-      source: 'painel1',
-      client_id: c.id,
-      flow: 'client_renewed',
-    })
-    window.open(`https://painel2.centralplayplus.com.br?${params.toString()}`, '_blank')
-  }
-
-  // Handler Codex IA
-  const handleEnviarCodex = () => {
-    if (!modalCodex || !codexPrompt.trim()) {
-      addToast('error', 'Digite uma pergunta ou problema')
-      return
-    }
-    // Gerar prompt completo para Codex
-    const promptCompleto = `Cliente: ${modalCodex.nome}
-Telefone: ${modalCodex.telefone}
-App: ${modalCodex.app}
-Servidor: ${modalCodex.servidor}
-Plano: ${modalCodex.plano}
-Vencimento: ${modalCodex.vencimento}
-
-Problema/Pergunta: ${codexPrompt}`
-    
-    navigator.clipboard.writeText(promptCompleto)
-    addToast('success', 'Contexto copiado para Codex IA')
-    setModalCodex(null)
-    setCodexPrompt('')
-  }
 
   return (
     <>
@@ -204,10 +385,6 @@ Problema/Pergunta: ${codexPrompt}`
           <h1 className="text-2xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}>Clientes</h1>
           <p className="text-slate-500 text-sm">
             {metricas.total} clientes · {metricas.ativos} ativos · R$ {metricas.receita.toFixed(0)} ativos/mes
-          </p>
-          <p className="mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-medium"
-             style={{ background: dataSource === 'supabase' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: dataSource === 'supabase' ? '#4ade80' : '#fbbf24' }}>
-            Fonte: {dataSource === 'supabase' ? 'Supabase' : 'Mock'}
           </p>
         </div>
 
@@ -278,121 +455,21 @@ Problema/Pergunta: ${codexPrompt}`
       <ClientDrawer
         cliente={selecionado}
         onClose={() => setSelecionado(null)}
-        onPainel2={abrirPainel2}
-        onRenovar={(c) => addToast('success', `Renovacao de ${c.nome} iniciada`)}
+        onRenovar={(c) => {
+          if (renovandoId === c.id) return
+          setRenovando(c)
+        }}
       />
-
-      {/* Modal Playlist / Credenciais (catalogo real) */}
-      <CredentialsModal cliente={modalCredenciais} onClose={() => setModalCredenciais(null)} />
-
-      {/* Modal Ativar segunda tela (catalogo real) */}
-      <CredentialsModal cliente={modalSegundaTela} onClose={() => setModalSegundaTela(null)} segundaTela />
-
-      {/* Modal Codex IA */}
-      <AnimatePresence>
-        {modalCodex && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.8)' }}
-            onClick={() => { setModalCodex(null); setCodexPrompt('') }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-lg rounded-2xl overflow-hidden"
-              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-violet-400" />
-                    <h2 className="text-lg font-bold text-white">Codex IA</h2>
-                  </div>
-                  <button onClick={() => { setModalCodex(null); setCodexPrompt('') }} className="p-1 rounded-lg hover:bg-white/10">
-                    <X className="h-5 w-5 text-slate-400" />
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 mt-1">Gerar contexto para Codex sobre {modalCodex.nome}</p>
-              </div>
-
-              <div className="p-5 space-y-4">
-                {/* Info do cliente */}
-                <div className="rounded-xl p-4" style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)' }}>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-500">Cliente:</span>
-                      <span className="text-slate-200 ml-2">{modalCodex.nome}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Telefone:</span>
-                      <span className="text-slate-200 ml-2">{modalCodex.telefone}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">App:</span>
-                      <span className="text-slate-200 ml-2">{modalCodex.app}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Servidor:</span>
-                      <span className="text-slate-200 ml-2">{modalCodex.servidor}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Campo de pergunta/problema */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    Pergunta ou problema
-                  </label>
-                  <textarea
-                    value={codexPrompt}
-                    onChange={(e) => setCodexPrompt(e.target.value)}
-                    placeholder="Ex: Cliente relata que app trava ao abrir. O que pode ser?"
-                    className="w-full h-32 rounded-xl p-4 text-sm text-white placeholder:text-slate-600 outline-none resize-none"
-                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-                  />
-                </div>
-
-                {/* Ações rápidas */}
-                <div className="flex gap-2 flex-wrap">
-                  {['App travando', 'Sem canais', 'Erro de login', 'Tela preta', 'Lentidão'].map(sugestao => (
-                    <button
-                      key={sugestao}
-                      onClick={() => setCodexPrompt(sugestao)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium"
-                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}
-                    >
-                      {sugestao}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Botões */}
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                  <button
-                    onClick={() => { setModalCodex(null); setCodexPrompt('') }}
-                    className="h-11 rounded-xl text-sm font-medium"
-                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={handleEnviarCodex}
-                    className="h-11 rounded-xl text-sm font-bold text-white"
-                    style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', boxShadow: '0 4px 16px rgba(139,92,246,0.3)' }}
-                  >
-                    Copiar para Codex
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {renovando && (
+        <RenovarModal
+          cliente={renovando}
+          busy={renovandoId === renovando.id}
+          onClose={() => {
+            if (!renovandoId) setRenovando(null)
+          }}
+          onConfirm={confirmarRenovacao}
+        />
+      )}
     </>
   )
 }

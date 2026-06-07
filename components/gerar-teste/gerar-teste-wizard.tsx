@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect } from 'react'
+import { m as motion, AnimatePresence } from 'framer-motion'
 import {
   Copy, CheckCircle, ArrowRight, ArrowLeft,
   RotateCcw, Zap, Server, User, Phone, ChevronDown,
-  ExternalLink, PlayCircle, FileText
+  ExternalLink, PlayCircle, FileText, X
 } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
@@ -15,6 +15,8 @@ import { cn } from '@/lib/utils'
 // ----------------------------------------------------------------
 type WizardStep = 1 | 2 | 3 | 4
 type ProcessStep = 'gerando' | 'sucesso'
+type GenerationStepStatus = 'pending' | 'running' | 'done' | 'failed'
+type GenerationProgressStep = { id: string; label: string; status: GenerationStepStatus }
 
 interface FormData {
   nome: string
@@ -26,6 +28,7 @@ interface FormData {
 
 interface TesteGerado {
   id: string
+  clientId?: string
   pedido: string
   host: string
   codigo: string
@@ -48,6 +51,14 @@ interface TesteGerado {
     log_id?: string | null
     screenshot_path?: string | null
     message?: string
+  }
+  dispatch?: {
+    status?: string
+    ok?: boolean
+    dry_run?: boolean
+    code?: string | null
+    message?: string | null
+    idempotency_key?: string
   }
   /** Indica de onde vieram os dados: gravou no Supabase ou apenas mock local */
   source: 'supabase' | 'mock'
@@ -122,27 +133,21 @@ const SERVIDORES = [
   },
 ]
 
-// Etapas de geração - apps comuns
-const ETAPAS_GERACAO_COMUM = [
-  { id: 'validando',   label: 'Validando dados' },
-  { id: 'conectando',  label: 'Conectando painel' },
-  { id: 'credenciais', label: 'Pegando credenciais' },
-  { id: 'salvando',    label: 'Salvando teste' },
+// Etapas de geração mais detalhadas (melhoria #7)
+const ETAPAS_GERACAO = [
+  { id: 'validando',   label: 'Validando cliente' },
+  { id: 'acesso',      label: 'Gerando acesso' },
+  { id: 'playlist',    label: 'Obtendo playlist' },
+  { id: 'dispositivo', label: 'Criando device XCloud' },
+  { id: 'servidor',    label: 'Vinculando servidor Xtream' },
+  { id: 'reload',      label: 'Confirmando RELOAD' },
+  { id: 'mensagem',    label: 'Preparando mensagem' },
   { id: 'concluido',   label: 'Concluído' },
 ]
 
-// Etapas de geração - XCloud (sequência especial)
-const ETAPAS_GERACAO_XCLOUD = [
-  { id: 'validando',   label: 'Validando dados', fase: 'comum' },
-  { id: 'credenciais', label: 'Pegando credenciais', fase: 'comum' },
-  { id: 'salvando',    label: 'Salvando teste', fase: 'comum' },
-  { id: 'xcloud_start', label: 'Entrando no XCloud', fase: 'xcloud' },
-  { id: 'xcloud_device', label: 'Ativando dispositivo', fase: 'xcloud' },
-  { id: 'xcloud_playlist', label: 'Ativando lista própria', fase: 'xcloud' },
-  { id: 'xcloud_xtream', label: 'Vinculando Xtream', fase: 'xcloud' },
-  { id: 'xcloud_reload', label: 'Confirmando RELOAD', fase: 'xcloud' },
-  { id: 'concluido',   label: 'Concluído', fase: 'xcloud' },
-]
+function initialGenerationSteps(): GenerationProgressStep[] {
+  return ETAPAS_GERACAO.map((step, index) => ({ ...step, status: index === 0 ? 'running' : 'pending' }))
+}
 
 // ----------------------------------------------------------------
 // Helpers
@@ -194,72 +199,8 @@ function pendingXcloudWorker(): TesteGerado['xcloudWorker'] {
     device_added: false,
     xtream_attached: false,
     confirmation_found: false,
-    message: 'Acesso Yellow gerado. Execute o XCloud real quando estiver pronto.',
+    message: 'Worker XCloud aguardando fallback manual.',
   }
-}
-
-// ----------------------------------------------------------------
-// Particles — melhoria #4
-// ----------------------------------------------------------------
-function Particles() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const setSize = () => {
-      canvas.width = canvas.offsetWidth
-      canvas.height = canvas.offsetHeight
-    }
-    setSize()
-    window.addEventListener('resize', setSize)
-
-    type Particle = { x: number; y: number; vx: number; vy: number; size: number; alpha: number }
-    const particles: Particle[] = Array.from({ length: 55 }, () => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 0.18,
-      vy: (Math.random() - 0.5) * 0.18,
-      size: Math.random() * 1.2 + 0.2,
-      alpha: Math.random() * 0.25 + 0.04,
-    }))
-
-    let raf: number
-    const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      for (const p of particles) {
-        p.x += p.vx
-        p.y += p.vy
-        if (p.x < 0) p.x = canvas.width
-        if (p.x > canvas.width) p.x = 0
-        if (p.y < 0) p.y = canvas.height
-        if (p.y > canvas.height) p.y = 0
-
-        ctx.beginPath()
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(99,155,255,${p.alpha})`
-        ctx.fill()
-      }
-      raf = requestAnimationFrame(draw)
-    }
-    draw()
-
-    return () => {
-      window.removeEventListener('resize', setSize)
-      cancelAnimationFrame(raf)
-    }
-  }, [])
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      style={{ zIndex: 0 }}
-    />
-  )
 }
 
 // ----------------------------------------------------------------
@@ -268,64 +209,34 @@ function Particles() {
 function NeonBackground() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
-      <Particles />
       <div
-        className="absolute rounded-full"
+        className="absolute hidden rounded-full md:block"
         style={{
-          width: 700,
-          height: 700,
-          top: '-10%',
+          width: 620,
+          height: 620,
+          top: '-12%',
           left: '-15%',
-          background: 'radial-gradient(circle, rgba(37,99,235,0.14) 0%, rgba(37,99,235,0.04) 55%, transparent 70%)',
-          animation: 'orbFloat1 14s ease-in-out infinite',
-          filter: 'blur(1px)',
+          background: 'radial-gradient(circle, rgba(37,99,235,0.07) 0%, rgba(37,99,235,0.02) 55%, transparent 70%)',
         }}
       />
       <div
-        className="absolute rounded-full"
+        className="absolute hidden rounded-full md:block"
         style={{
-          width: 550,
-          height: 550,
-          top: '10%',
+          width: 480,
+          height: 480,
+          top: '8%',
           right: '-12%',
-          background: 'radial-gradient(circle, rgba(59,130,246,0.11) 0%, rgba(59,130,246,0.03) 55%, transparent 70%)',
-          animation: 'orbFloat2 17s ease-in-out infinite',
-          filter: 'blur(1px)',
-        }}
-      />
-      <div
-        className="absolute rounded-full"
-        style={{
-          width: 800,
-          height: 350,
-          bottom: '0%',
-          left: '15%',
-          background: 'radial-gradient(ellipse, rgba(14,165,233,0.07) 0%, rgba(14,165,233,0.02) 55%, transparent 70%)',
-          animation: 'orbFloat3 20s ease-in-out infinite',
-          filter: 'blur(2px)',
-        }}
-      />
-      <div
-        className="absolute left-0 right-0 top-0 h-px"
-        style={{
-          background: 'linear-gradient(90deg, transparent 0%, rgba(37,99,235,0.5) 25%, rgba(59,130,246,0.7) 50%, rgba(37,99,235,0.5) 75%, transparent 100%)',
-          animation: 'linePulse 5s ease-in-out infinite',
+          background: 'radial-gradient(circle, rgba(20,184,166,0.06) 0%, rgba(20,184,166,0.02) 55%, transparent 70%)',
         }}
       />
       <div
         className="absolute inset-0"
         style={{
           backgroundImage: `
-            linear-gradient(rgba(59,130,246,0.02) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(59,130,246,0.02) 1px, transparent 1px)
+            linear-gradient(rgba(59,130,246,0.015) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(59,130,246,0.015) 1px, transparent 1px)
           `,
           backgroundSize: '80px 80px',
-        }}
-      />
-      <div
-        className="absolute inset-0"
-        style={{
-          background: 'radial-gradient(ellipse at center, transparent 40%, rgba(7,10,18,0.6) 100%)',
         }}
       />
     </div>
@@ -339,8 +250,7 @@ export function GerarTesteWizard() {
   const [wizardStep, setWizardStep] = useState<WizardStep>(1)
   const [processStep, setProcessStep] = useState<ProcessStep | null>(null)
   const [form, setForm] = useState<FormData>({ nome: '', telefone: '', app: '', servidor: '', deviceKey: '' })
-  const [etapaAtual, setEtapaAtual] = useState(0)
-  const [etapasFeitas, setEtapasFeitas] = useState<Set<number>>(new Set())
+  const [generationSteps, setGenerationSteps] = useState<GenerationProgressStep[]>(initialGenerationSteps)
   const [teste, setTeste] = useState<TesteGerado | null>(null)
   const [copied, setCopied] = useState(false)
   const [mostrarServidores, setMostrarServidores] = useState(false)
@@ -362,23 +272,10 @@ export function GerarTesteWizard() {
 
   useEffect(() => {
     if (processStep !== 'gerando') return
-    setEtapaAtual(0)
-    setEtapasFeitas(new Set())
+    let alive = true
+    const operatorRef = `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    setGenerationSteps(initialGenerationSteps())
 
-    // Escolher etapas baseado no app
-    const etapas = form.app === 'xcloud' ? ETAPAS_GERACAO_XCLOUD : ETAPAS_GERACAO_COMUM
-
-    // Avança as etapas visuais da animação independente do fetch
-    const timers: ReturnType<typeof setTimeout>[] = []
-    etapas.forEach((_, i) => {
-      timers.push(setTimeout(() => {
-        setEtapaAtual(i)
-        setEtapasFeitas((prev) => new Set([...prev, i]))
-      }, i * 650))
-    })
-
-    // Chama o endpoint — aguarda o tempo mínimo da animação
-    const minDelay = etapas.length * 650 + 400
     const fetchTeste = async (): Promise<TesteGerado | null> => {
       try {
         const res = await fetch('/api/tests/create', {
@@ -390,17 +287,19 @@ export function GerarTesteWizard() {
             app_key: form.app,
             panel_key: form.servidor,
             device_key: form.app === 'xcloud' ? form.deviceKey : undefined,
+            operator_ref: operatorRef,
           }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
         if (!data.success) throw new Error(data.error ?? 'Erro desconhecido')
         const xcloudWorker: TesteGerado['xcloudWorker'] | undefined = form.app === 'xcloud' && data.test.id
-          ? pendingXcloudWorker()
+          ? normalizeXcloudWorker(data.test.xcloud_worker, 'Completed') || pendingXcloudWorker()
           : undefined
 
         return {
           id:       data.test.id,
+          clientId: data.test.client_id || data.client?.id || undefined,
           pedido:   data.test.pedido || data.test.order_id || '',
           host:     data.test.host || data.test.dns || '',
           codigo:   data.test.provider_code || data.test.code || '',
@@ -410,6 +309,7 @@ export function GerarTesteWizard() {
           mensagem: data.test.mensagem,
           deviceKey: data.test.device_key || undefined,
           xcloudWorker,
+          dispatch: data.test.dispatch || undefined,
           source:   data.source,
         }
       } catch (err) {
@@ -420,18 +320,38 @@ export function GerarTesteWizard() {
       }
     }
 
-    // Aguarda o mínimo da animação antes de exibir sucesso
-    timers.push(setTimeout(async () => {
+    const pollProgress = async () => {
+      try {
+        const res = await fetch(`/api/tests/create/progress?operator_ref=${encodeURIComponent(operatorRef)}`, { cache: 'no-store' })
+        const data = await res.json().catch(() => null)
+        if (!alive || !data?.ok || !Array.isArray(data.steps)) return
+        setGenerationSteps(data.steps)
+      } catch {
+        // The create request remains authoritative; polling is only for UI progress.
+      }
+    }
+
+    const interval = setInterval(pollProgress, 1000)
+    pollProgress()
+
+    ;(async () => {
       const resultado = await fetchTeste()
+      await pollProgress()
+      clearInterval(interval)
+      if (!alive) return
       if (!resultado) {
         setProcessStep(null)
         return
       }
+      setGenerationSteps(ETAPAS_GERACAO.map((step) => ({ ...step, status: 'done' })))
       setTeste(resultado)
       setProcessStep('sucesso')
-    }, minDelay))
+    })()
 
-    return () => timers.forEach(clearTimeout)
+    return () => {
+      alive = false
+      clearInterval(interval)
+    }
   }, [processStep, form])
 
   const canProceed = (step: WizardStep): boolean => {
@@ -482,14 +402,14 @@ export function GerarTesteWizard() {
       window.open('https://painel2.centralplayplus.com.br', '_blank')
       return
     }
-    // Enviar contexto completo para o Painel 2
     const params = new URLSearchParams({
       source: 'painel1',
       test_id: teste.id,
+      ...(teste.clientId ? { client_id: teste.clientId } : {}),
       client_name: form.nome,
       client_phone: form.telefone,
       app: form.app,
-      servidor: form.servidor,
+      panel: form.servidor,
       flow: 'test_created',
     })
     if (form.app === 'xcloud' && form.deviceKey) {
@@ -498,32 +418,51 @@ export function GerarTesteWizard() {
     window.open(`https://painel2.centralplayplus.com.br?${params.toString()}`, '_blank')
   }
 
-  // Handler para o botão "Concluir" - envia contexto e volta para novo teste
-  const handleConcluir = () => {
-    if (teste?.id) {
-      // Enviar contexto para o Painel 2
-      const params = new URLSearchParams({
-        source: 'painel1',
-        test_id: teste.id,
-        client_name: form.nome,
-        client_phone: form.telefone,
-        app: form.app,
-        servidor: form.servidor,
-        flow: 'test_created',
-      })
-      if (form.app === 'xcloud' && form.deviceKey) {
-        params.set('device_key', form.deviceKey)
-      }
-      window.open(`https://painel2.centralplayplus.com.br?${params.toString()}`, '_blank')
+  const handleConcluir = async () => {
+    if (!teste?.id) return
+    if (teste.dispatch?.ok && teste.dispatch.status !== 'failed') {
+      addToast('success', teste.dispatch.dry_run ? 'Mensagem preparada no Painel 2' : 'Mensagem de teste já enviada')
+      handleNovoTeste()
+      return
     }
-    addToast('success', 'Contexto enviado para Painel 2')
-    // Voltar para tela de novo teste
-    handleNovoTeste()
+    try {
+      const res = await fetch('/api/flows/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          flow: 'test_created',
+          phone: form.telefone,
+          idempotency_key: teste.dispatch?.idempotency_key || `test_created:${teste.id}`,
+          client: { name: form.nome, phone: form.telefone },
+          test: {
+            id: teste.id,
+            app: APPS.find((item) => item.id === form.app)?.label || form.app,
+            panel: SERVIDORES.find((item) => item.id === form.servidor)?.label || form.servidor,
+            pedido: teste.pedido,
+            host: teste.host,
+            username: teste.usuario,
+            password: teste.senha,
+            code: teste.codigo,
+          },
+          context: {
+            source: 'painel1',
+            operator_ref: 'painel_web',
+            test_id: teste.id,
+          },
+        }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || data?.ok === false) throw new Error(data?.message || data?.error || `HTTP ${res.status}`)
+      addToast('success', data?.dryRun ? 'Preview gerado no Painel 2 (dry-run: WhatsApp não enviado)' : `Mensagem de teste enviada (${data?.code || 'SENT'})`)
+      handleNovoTeste()
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : 'Falha ao disparar flow no Painel 2')
+    }
   }
 
   const handleAtivarCliente = () => {
     if (!teste?.id) return
-    window.dispatchEvent(new CustomEvent('centralplay:navigate', { detail: { page: 'contas', test_id: teste.id } }))
+    window.dispatchEvent(new CustomEvent('centralplay:navigate', { detail: { page: 'ativar-clientes', test_id: teste.id } }))
     addToast('success', 'Abrindo ativação do cliente')
   }
 
@@ -642,6 +581,7 @@ export function GerarTesteWizard() {
     setWizardStep(1)
     setDirection(1)
     setForm({ nome: '', telefone: '', app: '', servidor: '', deviceKey: '' })
+    setGenerationSteps(initialGenerationSteps())
     setTeste(null)
     setCopied(false)
     setMostrarServidores(false)
@@ -664,7 +604,7 @@ export function GerarTesteWizard() {
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
               style={{ background: 'rgba(7,10,18,0.97)' }}
             >
-              <TelaGerando etapaAtual={etapaAtual} etapasFeitas={etapasFeitas} form={form} />
+              <TelaGerando steps={generationSteps} form={form} />
             </motion.div>
           )}
           {processStep === 'sucesso' && teste && (
@@ -1156,25 +1096,18 @@ function StepConfirmar({
 }
 
 // ----------------------------------------------------------------
-// Tela Gerando — com visual especial para XCloud
+// Tela Gerando — melhoria #7: 6 etapas detalhadas
 // ----------------------------------------------------------------
 function TelaGerando({
-  etapaAtual,
-  etapasFeitas,
+  steps,
   form,
 }: {
-  etapaAtual: number
-  etapasFeitas: Set<number>
+  steps: GenerationProgressStep[]
   form: FormData
 }) {
   const servidorSelecionado = SERVIDORES.find((s) => s.id === form.servidor)
   const appSelecionado = APPS.find(a => a.id === form.app)
   const isXCloud = form.app === 'xcloud'
-  const etapas = isXCloud ? ETAPAS_GERACAO_XCLOUD : ETAPAS_GERACAO_COMUM
-
-  // Verificar se estamos na fase XCloud
-  const etapaAtualObj = etapas[etapaAtual]
-  const emFaseXCloud = isXCloud && etapaAtualObj && 'fase' in etapaAtualObj && etapaAtualObj.fase === 'xcloud'
 
   return (
     <div className="w-full max-w-md">
@@ -1187,24 +1120,18 @@ function TelaGerando({
           <div
             className="absolute inset-0 rounded-full"
             style={{
-              background: emFaseXCloud 
-                ? 'radial-gradient(circle, rgba(20,184,166,0.2) 0%, transparent 70%)'
-                : 'radial-gradient(circle, rgba(37,99,235,0.15) 0%, transparent 70%)',
-              boxShadow: emFaseXCloud 
-                ? '0 0 60px rgba(20,184,166,0.4)'
-                : '0 0 60px rgba(37,99,235,0.3)',
+              background: isXCloud ? 'radial-gradient(circle, rgba(20,184,166,0.2) 0%, transparent 70%)' : 'radial-gradient(circle, rgba(37,99,235,0.15) 0%, transparent 70%)',
+              boxShadow: isXCloud ? '0 0 60px rgba(20,184,166,0.4)' : '0 0 60px rgba(37,99,235,0.3)',
               animation: 'linePulse 2s ease-in-out infinite',
             }}
           />
           <div
             className="absolute h-28 w-28 rounded-full border-[3px] animate-spin"
             style={{
-              borderColor: emFaseXCloud ? 'rgba(20,184,166,0.1)' : 'rgba(59,130,246,0.1)',
-              borderTopColor: emFaseXCloud ? '#14b8a6' : '#3b82f6',
-              borderRightColor: emFaseXCloud ? 'rgba(20,184,166,0.4)' : 'rgba(59,130,246,0.4)',
-              boxShadow: emFaseXCloud 
-                ? '0 0 30px rgba(20,184,166,0.5)'
-                : '0 0 30px rgba(59,130,246,0.5)',
+              borderColor: isXCloud ? 'rgba(20,184,166,0.1)' : 'rgba(59,130,246,0.1)',
+              borderTopColor: isXCloud ? '#14b8a6' : '#3b82f6',
+              borderRightColor: isXCloud ? 'rgba(20,184,166,0.4)' : 'rgba(59,130,246,0.4)',
+              boxShadow: isXCloud ? '0 0 30px rgba(20,184,166,0.5)' : '0 0 30px rgba(59,130,246,0.5)',
               animationDuration: '1.2s',
             }}
           />
@@ -1212,30 +1139,25 @@ function TelaGerando({
             className="absolute h-20 w-20 rounded-full border-2 animate-spin"
             style={{
               borderColor: 'transparent',
-              borderTopColor: emFaseXCloud ? 'rgba(20,184,166,0.6)' : 'rgba(34,197,94,0.6)',
+              borderTopColor: 'rgba(34,197,94,0.6)',
               animationDuration: '2s',
               animationDirection: 'reverse',
             }}
           />
-          <Server style={{ width: 32, height: 32, color: emFaseXCloud ? '#14b8a6' : '#3b82f6' }} />
+          <Server style={{ width: 32, height: 32, color: isXCloud ? '#14b8a6' : '#3b82f6' }} />
         </div>
 
-        {emFaseXCloud && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mb-4 inline-flex items-center gap-2 rounded-full px-4 py-2"
-            style={{ background: 'rgba(20,184,166,0.15)', border: '1px solid rgba(20,184,166,0.3)' }}
-          >
+        {isXCloud && (
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full px-4 py-2" style={{ background: 'rgba(20,184,166,0.15)', border: '1px solid rgba(20,184,166,0.3)' }}>
             <span className="h-2 w-2 rounded-full animate-pulse" style={{ background: '#14b8a6' }} />
-            <span className="text-sm font-semibold" style={{ color: '#5eead4' }}>Agora ativando XCloud</span>
-          </motion.div>
+            <span className="text-sm font-semibold" style={{ color: '#5eead4' }}>XCloud em ativação real automática</span>
+          </div>
         )}
 
         <h2 className="mb-2 text-2xl font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>
-          {emFaseXCloud ? 'Ativando XCloud para' : 'Gerando teste para'}
+          Gerando teste para
         </h2>
-        <p className="text-xl font-semibold" style={{ color: emFaseXCloud ? '#14b8a6' : '#3b82f6' }}>{form.nome}</p>
+        <p className="text-xl font-semibold text-primary">{form.nome}</p>
         <div className="mt-2 flex items-center justify-center gap-2 text-sm text-muted-foreground">
           {appSelecionado && <><span>{appSelecionado.label}</span><span>•</span></>}
           {servidorSelecionado && <span>{servidorSelecionado.label}</span>}
@@ -1243,11 +1165,11 @@ function TelaGerando({
       </motion.div>
 
       <div className="space-y-2">
-        {etapas.map((etapa, i) => {
-          const feita = etapasFeitas.has(i)
-          const ativa = i === etapaAtual && !feita
-          const pendente = !feita && !ativa
-          const isEtapaXCloud = 'fase' in etapa && etapa.fase === 'xcloud'
+        {steps.map((etapa, i) => {
+          const feita = etapa.status === 'done'
+          const ativa = etapa.status === 'running'
+          const falhou = etapa.status === 'failed'
+          const pendente = etapa.status === 'pending'
 
           return (
             <motion.div
@@ -1258,12 +1180,16 @@ function TelaGerando({
               className="flex items-center gap-4 rounded-xl px-4 py-3.5 transition-all duration-300"
               style={{
                 background: ativa
-                  ? isEtapaXCloud ? 'rgba(20,184,166,0.12)' : 'rgba(37,99,235,0.12)'
+                  ? 'rgba(37,99,235,0.12)'
+                  : falhou
+                    ? 'rgba(239,68,68,0.10)'
                   : feita
                     ? 'rgba(34,197,94,0.08)'
                     : 'rgba(255,255,255,0.02)',
                 border: ativa
-                  ? isEtapaXCloud ? '1px solid rgba(20,184,166,0.25)' : '1px solid rgba(37,99,235,0.25)'
+                  ? '1px solid rgba(37,99,235,0.25)'
+                  : falhou
+                    ? '1px solid rgba(239,68,68,0.25)'
                   : feita
                     ? '1px solid rgba(34,197,94,0.15)'
                     : '1px solid rgba(255,255,255,0.04)',
@@ -1274,20 +1200,26 @@ function TelaGerando({
                 style={{
                   background: feita
                     ? '#22c55e'
+                    : falhou
+                      ? '#ef4444'
                     : ativa
-                      ? isEtapaXCloud ? 'rgba(20,184,166,0.25)' : 'rgba(37,99,235,0.25)'
+                      ? 'rgba(37,99,235,0.25)'
                       : 'rgba(255,255,255,0.04)',
                   boxShadow: feita
                     ? '0 0 16px rgba(34,197,94,0.5)'
+                    : falhou
+                      ? '0 0 16px rgba(239,68,68,0.35)'
                     : ativa
-                      ? isEtapaXCloud ? '0 0 16px rgba(20,184,166,0.4)' : '0 0 16px rgba(59,130,246,0.4)'
+                      ? '0 0 16px rgba(59,130,246,0.4)'
                       : 'none',
                 }}
               >
                 {feita ? (
                   <CheckCircle className="h-5 w-5 text-white" strokeWidth={3} />
+                ) : falhou ? (
+                  <X className="h-5 w-5 text-white" strokeWidth={3} />
                 ) : ativa ? (
-                  <div className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: isEtapaXCloud ? '#5eead4' : '#93c5fd' }} />
+                  <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-blue-400" />
                 ) : (
                   <div className="h-2 w-2 rounded-full" style={{ background: 'rgba(255,255,255,0.1)' }} />
                 )}
@@ -1295,16 +1227,17 @@ function TelaGerando({
 
               <span
                 className="flex-1 text-sm font-medium transition-all duration-300"
-                style={{ color: feita ? '#86efac' : ativa ? (isEtapaXCloud ? '#5eead4' : '#93c5fd') : '#475569' }}
+                style={{ color: feita ? '#86efac' : falhou ? '#f87171' : ativa ? '#93c5fd' : '#475569' }}
               >
                 {etapa.label}
               </span>
 
-              {feita && <span className="text-[11px] font-bold text-emerald-400">OK</span>}
+              {feita && <span className="text-[11px] font-bold text-emerald-400">✓</span>}
+              {falhou && <span className="text-[11px] font-bold text-red-300">falhou</span>}
               {ativa && (
                 <div
                   className="h-4 w-4 rounded-full border-2 animate-spin"
-                  style={{ borderColor: isEtapaXCloud ? 'rgba(20,184,166,0.2)' : 'rgba(59,130,246,0.2)', borderTopColor: isEtapaXCloud ? '#14b8a6' : '#3b82f6' }}
+                  style={{ borderColor: 'rgba(59,130,246,0.2)', borderTopColor: '#3b82f6' }}
                 />
               )}
               {pendente && <span className="text-[11px] text-muted-foreground">○</span>}
@@ -1568,38 +1501,24 @@ function TelaSucesso({
             </motion.div>
           )}
 
-          {/* Botão principal: CONCLUIR */}
+          {teste.dispatch && (
+            <div className="mb-5 rounded-xl p-3" style={{ background: teste.dispatch.status === 'failed' ? 'rgba(239,68,68,0.06)' : 'rgba(34,197,94,0.06)', border: `1px solid ${teste.dispatch.status === 'failed' ? 'rgba(239,68,68,0.16)' : 'rgba(34,197,94,0.16)'}` }}>
+              <p className="text-xs font-semibold" style={{ color: teste.dispatch.status === 'failed' ? '#fca5a5' : '#86efac' }}>
+                {teste.dispatch.status === 'failed' ? 'Mensagem não enviada' : teste.dispatch.dry_run ? 'Mensagem preparada' : 'Mensagem enviada ao cliente'}
+              </p>
+              {teste.dispatch.message && <p className="mt-1 text-[11px] text-slate-500">{teste.dispatch.message}</p>}
+            </div>
+          )}
+
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.7 }}
-          >
-            <button
-              onClick={onConcluir}
-              className="w-full flex h-14 items-center justify-center gap-2 rounded-xl text-base font-bold text-white transition-all"
-              style={{
-                background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                boxShadow: '0 4px 20px rgba(34,197,94,0.4)',
-              }}
-            >
-              <CheckCircle className="h-5 w-5" />
-              Concluir
-            </button>
-            <p className="mt-2 text-center text-[11px] text-slate-500">
-              Envia contexto para o Painel 2 e volta para novo teste
-            </p>
-          </motion.div>
-
-          {/* Ações secundárias */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
             className="grid grid-cols-2 gap-2.5"
           >
             <button
               onClick={onCopiar}
-              className="flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-all hover:bg-white/[0.07]"
+              className="flex h-12 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-all hover:bg-white/[0.07]"
               style={{
                 background: 'rgba(255,255,255,0.04)',
                 border: '1px solid rgba(255,255,255,0.08)',
@@ -1610,12 +1529,23 @@ function TelaSucesso({
               {copied ? 'Copiado!' : 'Copiar dados'}
             </button>
             <button
-              onClick={onAbrirPainel2}
-              className="flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-all hover:bg-white/[0.07]"
+              onClick={onConcluir}
+              className="flex h-12 items-center justify-center gap-2 rounded-xl text-sm font-bold text-white transition-all"
               style={{
-                background: 'rgba(59,130,246,0.1)',
-                border: '1px solid rgba(59,130,246,0.2)',
-                color: '#60a5fa',
+                background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                boxShadow: '0 4px 20px rgba(34,197,94,0.35)',
+              }}
+            >
+              <CheckCircle className="h-[18px] w-[18px]" />
+              Concluir
+            </button>
+            <button
+              onClick={onAbrirPainel2}
+              className="flex h-12 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-all"
+              style={{
+                background: 'rgba(37,99,235,0.12)',
+                border: '1px solid rgba(37,99,235,0.24)',
+                color: '#93c5fd',
               }}
             >
               <ExternalLink className="h-[18px] w-[18px]" />
@@ -1626,43 +1556,43 @@ function TelaSucesso({
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.9 }}
-            className="grid grid-cols-3 gap-2"
+            transition={{ delay: 0.8 }}
+            className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-3"
           >
             <button
               onClick={onAtivarCliente}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-xl text-xs font-medium transition-all hover:bg-white/[0.05]"
+              className="flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-all hover:bg-white/[0.05]"
               style={{
                 background: 'rgba(34,197,94,0.06)',
                 border: '1px solid rgba(34,197,94,0.14)',
                 color: '#86efac',
               }}
             >
-              <PlayCircle className="h-4 w-4" />
+              <PlayCircle className="h-[18px] w-[18px]" />
               Ativar cliente
             </button>
             <button
               onClick={onNovo}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-xl text-xs font-medium transition-all hover:bg-white/[0.05]"
+              className="flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-all hover:bg-white/[0.05]"
               style={{
                 background: 'rgba(255,255,255,0.02)',
                 border: '1px solid rgba(255,255,255,0.06)',
                 color: '#64748b',
               }}
             >
-              <RotateCcw className="h-4 w-4" />
+              <RotateCcw className="h-[18px] w-[18px]" />
               Gerar outro
             </button>
             <button
               onClick={onVerLog}
-              className="flex h-10 items-center justify-center gap-1.5 rounded-xl text-xs font-medium transition-all hover:bg-white/[0.05]"
+              className="flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-all hover:bg-white/[0.05]"
               style={{
                 background: 'rgba(255,255,255,0.02)',
                 border: '1px solid rgba(255,255,255,0.06)',
                 color: '#64748b',
               }}
             >
-              <FileText className="h-4 w-4" />
+              <FileText className="h-[18px] w-[18px]" />
               Ver log
             </button>
           </motion.div>
